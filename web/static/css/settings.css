@@ -1,0 +1,174 @@
+/* ============================================================
+   settings.css — Configuration page (settings.html)
+   LoveChoice Voice Console
+   ============================================================ */
+
+/* ---- ability cards ---- */
+
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ability-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.ability-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-control);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.ability-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ability-card strong,
+.ability-card span,
+.ability-card p {
+  display: block;
+}
+
+.ability-card span {
+  margin-top: 3px;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.ability-card p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ---- prompt textarea ---- */
+
+.prompt-textarea {
+  min-height: 430px;
+}
+
+/* ---- profile cards ---- */
+
+.profile-list {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.command-editor-list .profile-card {
+  background: var(--surface-muted);
+}
+
+.profile-head strong {
+  display: block;
+  font-size: 16px;
+}
+
+.profile-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.profile-summary {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.profile-summary span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* ---- advanced profile (collapsible command editor) ---- */
+
+.advanced-profile {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.advanced-profile summary {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.advanced-profile summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-profile .form-grid {
+  margin-top: 9px;
+}
+
+.profile-command {
+  min-height: 180px;
+  color: #d7e3dc;
+  background: #111827;
+}
+
+/* ---- memory list ---- */
+
+.memory-compact {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+/* ---- settings responsive ---- */
+
+@media (max-width: 1180px) {
+  .settings-page {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .ability-grid {
+    grid-template-columns: 1fr;
+  }
+}

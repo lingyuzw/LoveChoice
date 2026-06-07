@@ -1,0 +1,196 @@
+/* ============================================================
+   services.css — Service orchestration page (services.html)
+   LoveChoice Voice Console
+   ============================================================ */
+
+/* ---- pipeline overview (top flow) ---- */
+
+.pipeline-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr) 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.pipeline-overview > svg {
+  width: 20px;
+  height: 20px;
+  justify-self: center;
+  color: var(--text-muted);
+}
+
+.pipeline-node {
+  min-height: 78px;
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.pipeline-node span {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.pipeline-node strong {
+  font-size: 18px;
+}
+
+.pipeline-node small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- service list ---- */
+
+.service-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* ---- service card ---- */
+
+.service-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.service-top {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+}
+
+.service-badge {
+  align-self: start;
+}
+
+.service-title {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.service-title strong {
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-title span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.service-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.meta-cell {
+  min-height: 52px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+
+.meta-cell strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* ---- logs panel ---- */
+
+.logs-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.log-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.log-tab {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 900;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.log-tab:hover {
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.log-tab.active {
+  color: #fff;
+  background: var(--text);
+}
+
+.log-viewer,
+#logOutput {
+  height: 530px;
+  margin: 0;
+  padding: 13px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: #d7e3dc;
+  background: #111827;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ---- services responsive ---- */
+
+@media (max-width: 1180px) {
+  .services-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .service-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .pipeline-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .pipeline-overview > svg {
+    transform: rotate(90deg);
+  }
+}

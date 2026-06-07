@@ -4,9 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LoveChoice Voice Console</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/css/base.css" />
+    <link rel="stylesheet" href="/static/css/layout.css" />
+    <link rel="stylesheet" href="/static/css/dashboard.css" />
+    <link rel="stylesheet" href="/static/css/services.css" />
+    <link rel="stylesheet" href="/static/css/settings.css" />
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
-    <script src="/static/app.js" defer></script>
+    <script type="module" src="/static/js/main.js" defer></script>
   </head>
   <body data-page="dashboard">
     <div class="app-shell">
@@ -58,7 +62,7 @@
             </div>
             <div class="mini-card">
               <span>模型</span>
-              <strong>qwen3.5-9b</strong>
+              <strong id="modelName">qwen3.5-9b</strong>
             </div>
             <div class="service-dots" id="serviceOverview">
               <span><i></i>ASR</span>
@@ -104,7 +108,7 @@
               <span id="levelText">0%</span>
             </div>
             <canvas id="scopeCanvas" width="1280" height="160"></canvas>
-            <div class="level-track"><span id="levelBar"></span></div>
+            <div class="level-track"><span class="level-bar" id="levelBar"></span></div>
           </div>
 
           <div class="composer">

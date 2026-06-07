@@ -4,9 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LoveChoice Settings</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/css/base.css" />
+    <link rel="stylesheet" href="/static/css/layout.css" />
+    <link rel="stylesheet" href="/static/css/settings.css" />
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
-    <script src="/static/app.js" defer></script>
+    <script type="module" src="/static/js/main.js" defer></script>
   </head>
   <body data-page="settings">
     <div class="app-shell">
@@ -28,7 +30,7 @@
         </nav>
 
         <div class="topbar-status">
-          <span class="status-pill" id="systemState">静态预览</span>
+          <span class="status-pill" id="systemState">连接中</span>
         </div>
       </header>
 
@@ -55,7 +57,7 @@
                 <p class="eyebrow">Model Engine</p>
                 <h2>模型引擎</h2>
               </div>
-              <span class="soft-badge" id="apiKeyState">未保存，可填 sk-... 格式</span>
+              <span class="soft-badge" id="apiKeyState">未保存</span>
             </div>
             <div class="form-grid">
               <label><span>ASR Mode</span><select id="asrMode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
@@ -75,10 +77,6 @@
               <div>
                 <p class="eyebrow">Persona</p>
                 <h2>Prompt 配置</h2>
-              </div>
-              <div class="inline-actions">
-                <button class="small-button" type="button"><i data-lucide="rotate-ccw"></i>恢复默认</button>
-                <button class="small-button" type="button"><i data-lucide="save"></i>保存 Prompt</button>
               </div>
             </div>
             <label class="wide"><span>System Prompt</span><textarea class="prompt-textarea" id="systemPrompt"></textarea></label>

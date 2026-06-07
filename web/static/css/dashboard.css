@@ -1,0 +1,361 @@
+/* ============================================================
+   dashboard.css — Chat page (index.html)
+   LoveChoice Voice Console
+   ============================================================ */
+
+/* ---- conversation list ---- */
+
+.conversation-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.conversation-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-soft);
+  text-align: left;
+  background: var(--surface);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.conversation-item:hover {
+  border-color: var(--border-strong);
+}
+
+.conversation-item.active {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: var(--primary-soft);
+}
+
+.conversation-open {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 5px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.conversation-delete {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.conversation-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.conversation-item strong,
+.conversation-item span,
+.conversation-item small,
+.conversation-empty {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-item strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.conversation-item span,
+.conversation-empty,
+.conversation-item small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- main chat panel ---- */
+
+.chat-panel,
+.main-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+/* ---- active conversation info ---- */
+
+.conversation-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.conversation-current strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+}
+
+.conversation-current span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* ---- pipeline strip ---- */
+
+.pipeline-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pipeline-step {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 900;
+  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+}
+
+.pipeline-step svg {
+  width: 15px;
+  height: 15px;
+}
+
+.pipeline-step.active {
+  border-color: rgba(15, 118, 110, 0.38);
+  color: var(--primary);
+  background: var(--primary-soft);
+  animation: pipelinePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pipelinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(15, 118, 110, 0); }
+}
+
+.pipeline-step.done {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.pipeline-step.error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ---- transcript ---- */
+
+.transcript {
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.94));
+  scroll-behavior: smooth;
+}
+
+.message {
+  width: fit-content;
+  max-width: 70%;
+  margin: 0 0 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text-soft);
+  background: var(--surface);
+  line-height: 1.72;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: messageIn 220ms ease-out;
+}
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+  margin-left: auto;
+  border-color: rgba(37, 99, 235, 0.18);
+  background: var(--info-soft);
+}
+
+.message.assistant {
+  border-color: rgba(15, 118, 110, 0.18);
+  background: var(--surface);
+}
+
+.message.system {
+  margin-right: auto;
+  margin-left: auto;
+  max-width: 88%;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 13px;
+}
+
+/* ---- listen strip (waveform + level) ---- */
+
+.listen-strip {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.listen-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+#scopeCanvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.level-track {
+  height: 7px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eeeb;
+}
+
+.level-bar {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--info), var(--warning));
+  transition: width 80ms linear;
+}
+
+/* ---- composer bar ---- */
+
+.composer {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px 48px 48px;
+  align-items: end;
+  gap: 8px;
+}
+
+/* ---- inspector panel (right sidebar) ---- */
+
+.inspector-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inspector-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+/* ---- status timeline ---- */
+
+.status-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.status-timeline div {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.status-timeline .status-dot {
+  grid-row: 1 / span 2;
+  margin-top: 5px;
+}
+
+.status-timeline strong,
+.status-timeline small {
+  display: block;
+}
+
+.status-timeline strong {
+  font-size: 13px;
+}
+
+.status-timeline small {
+  grid-column: 2;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- alert / error card ---- */
+
+.alert-card p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* ---- dashboard responsive ---- */
+
+@media (max-width: 1180px) {
+  .inspector-panel {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .chat-panel {
+    min-height: 680px;
+  }
+
+  .pipeline-strip,
+  .inspector-panel,
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .message {
+    max-width: 92%;
+  }
+}
