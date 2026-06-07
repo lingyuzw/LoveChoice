@@ -37,7 +37,7 @@ export async function initDashboard() {
   // sidebar "new conversation" button has its own independent handler
   $("#newConversationBtn")?.addEventListener("click", newConversation);
 
-  setText("dialogState", "待机");
+  setText("topStatus", "待机");
   setupMemoryModal();
   syncChatView();
 }
@@ -93,7 +93,7 @@ function sendText(inputId) {
   const other = $(`#${otherId}`);
   if (other) other.value = "";
 
-  setText("dialogState", "发送");
+  setText("topStatus", "发送");
   updatePipelineCompact("llm", "已发送");
   state.ws.send(JSON.stringify({ type: "text", text }));
   input.value = "";
@@ -173,7 +173,7 @@ async function handleDeleteConversation(conversation) {
 /* ---- mic ---- */
 
 async function toggleMic() {
-  if (state.micActive) { stopMic(); setText("dialogState", "待机"); updatePipelineCompact("idle"); }
+  if (state.micActive) { stopMic(); setText("topStatus", "待机"); updatePipelineCompact("idle"); }
   else {
     if (!state.connected) { showToast("对话通道未连接", "error"); return; }
     await startMic({ onSendSamples: (samples) => {
@@ -181,7 +181,7 @@ async function toggleMic() {
       if (state.busy) return;
       sendMicSamples(samples);
     }});
-    setText("dialogState", "监听中"); updatePipelineCompact("vad", "listening");
+    setText("topStatus", "监听中"); updatePipelineCompact("vad", "listening");
   }
 }
 

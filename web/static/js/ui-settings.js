@@ -15,7 +15,7 @@ export async function initSettings() {
   fillConfig(configResult.config);
   await loadServices();
   renderProfileList();
-  setText("systemState", configResult.ok ? "后端在线" : "静态预览");
+  setText("topStatus", configResult.ok ? "后端在线" : "静态预览");
 }
 
 function setupSettingsEvents() {
@@ -126,7 +126,7 @@ function createProfileCard(service) {
   card.querySelector(".profile-health").value = service.health_url || "";
   card.querySelector(".profile-wait").value = service.startup_wait_sec ?? 0;
   card.querySelector(".profile-command").value = service.command || "";
-  card.querySelector(".test-log").addEventListener("click", () => { location.href = `/static/services.html#logs-${service.id}`; });
+  card.querySelector(".test-log").addEventListener("click", () => { location.href = `/static/index.html#services`; });
   card.querySelector(".copy-command").addEventListener("click", async () => {
     const cmd = card.querySelector(".profile-command")?.value || ""; if (!cmd.trim()) return;
     try { await navigator.clipboard.writeText(cmd); showToast("已复制", "success"); } catch { showToast("复制失败", "error"); }

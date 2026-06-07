@@ -21,7 +21,7 @@ export function initServices() {
       renderLogTabs();
       startServicePolling();
       refreshLogs(state.selectedLogService, { quiet: true });
-      setText("systemState", serviceSummaryText());
+      setText("topStatus", serviceSummaryText());
     });
   });
 }
@@ -59,10 +59,21 @@ function createServiceCard(service) {
   card.className = `service-card ${stateClass}`;
   card.dataset.serviceCard = service.id;
 
+  const stateLabel = service.external ? "External" : service.running ? "Running" : healthOk === false ? "Failed" : "Stopped";
+  const health = service.health ? (service.health.ok ? "OK" : "Fail") : "--";
+  const pid = service.external ? "external" : service.pid || "--";
+  const port = service.health_url ? new URL(service.health_url).port || "--" : "--";
+
   card.innerHTML = `
-    <div class="service-top">
+    <div class="service-head">
       <span class="status-dot"></span>
       <div class="service-title"><strong>${service.label || service.id}</strong></div>
+      <span class="service-badge ${service.running ? 'running' : healthOk === false ? 'failed' : ''}">${stateLabel}</span>
+    </div>
+    <div class="service-meta">
+      <div class="meta-cell"><span>HEALTH</span><strong>${health}</strong></div>
+      <div class="meta-cell"><span>PID</span><strong>${pid}</strong></div>
+      <div class="meta-cell"><span>PORT</span><strong>${port}</strong></div>
     </div>
     <div class="service-actions">
       <button class="service-action start" type="button"><i data-lucide="play"></i>启动</button>
@@ -160,7 +171,7 @@ function downloadCurrentLog() {
 function startServicePolling() {
   window.clearInterval(state.servicePollTimer);
   state.servicePollTimer = window.setInterval(async () => {
-    await loadServices(); renderServiceCards(); setText("systemState", serviceSummaryText());
+    await loadServices(); renderServiceCards(); setText("topStatus", serviceSummaryText());
   }, 4500);
 }
 

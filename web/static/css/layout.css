@@ -65,6 +65,10 @@
 
 /* ---- chat panel area ---- */
 
+/* ---- page views ---- */
+.page-view { min-height: calc(100vh - var(--topbar-h)); }
+.page-view .voice-console { height: calc(100vh - var(--topbar-h)); }
+
 /* ---- services page ---- */
 .ops-page {
   width: min(1280px, calc(100vw - 28px));

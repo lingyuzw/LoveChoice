@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { state, PIPELINE_STEPS, ACTIVE_CONVERSATION_KEY } from "./state.js";
-import { $, setText, formatConversationMeta, showToast } from "./utils.js";
+import { $, setText, showToast } from "./utils.js";
 import { loadConversations } from "./api.js";
 import { stopAssistantAudio, schedulePcm16, releaseAfterPlayback } from "./audio.js";
 
@@ -23,15 +23,15 @@ export function connectSocket() {
   const ws = new WebSocket(`${scheme}://${location.host}/ws/dialog${query}`);
   state.ws = ws; ws.binaryType = "arraybuffer";
 
-  ws.addEventListener("open", () => { state.connected = true; setText("dialogState", state.micActive ? "监听中" : "待机"); sendRuntimeSettings(); });
+  ws.addEventListener("open", () => { state.connected = true; setText("topStatus", state.micActive ? "监听中" : "待机"); sendRuntimeSettings(); });
   ws.addEventListener("message", handleSocketMessage);
   ws.addEventListener("close", () => {
     state.connected = false; stopAssistantAudio();
     state.busy = false; state.assistantActive = false; state.interrupting = false;
-    setText("dialogState", "断开");
+    setText("topStatus", "断开");
     if (!state.previewMode && !state.manualSocketClose) { window.clearTimeout(state.reconnectTimer); state.reconnectTimer = window.setTimeout(connectSocket, 1200); }
   });
-  ws.addEventListener("error", () => setText("dialogState", state.previewMode ? "预览" : "连接异常"));
+  ws.addEventListener("error", () => setText("topStatus", state.previewMode ? "预览" : "连接异常"));
 }
 
 export function reconnectDialog() {
@@ -57,34 +57,34 @@ async function handleSocketMessage(event) {
 
 function handleDialogEvent(data) {
   switch (data.type) {
-    case "ready": setText("dialogState", "待机"); pipeline("idle"); break;
+    case "ready": setText("topStatus", "待机"); pipeline("idle"); break;
     case "conversation": applyConversation(data.conversation, true); break;
     case "conversation_saved": applyConversation(data.conversation, false); break;
     case "settings": state.currentConfig = { ...state.currentConfig, ...(data.settings || {}) }; break;
-    case "vad_start": state.busy = false; setText("vadLabel", "speech"); setText("dialogState", "收音"); pipeline("vad", "正在听"); break;
-    case "vad_end": setText("vadLabel", `${data.duration_ms || 0}ms`); setText("dialogState", "识别"); pipeline("asr", "识别中"); state.busy = true; break;
+    case "vad_start": state.busy = false; setText("vadLabel", "speech"); setText("topStatus", "收音"); pipeline("vad", "正在听"); break;
+    case "vad_end": setText("vadLabel", `${data.duration_ms || 0}ms`); setText("topStatus", "识别"); pipeline("asr", "识别中"); state.busy = true; break;
     case "vad_short": setText("vadLabel", "short"); break;
     case "user": addMsg("user", data.text || ""); state.currentAssistant = null; pipeline("llm", "思考中"); break;
     case "assistant_start":
       window.clearTimeout(state.releaseTimer); state.assistantActive = true;
       state.interrupting = false; state.dropAudioUntilNextAssistant = false;
-      state.currentAssistant = addMsg("assistant", ""); setText("dialogState", "生成"); pipeline("llm", "生成中"); break;
+      state.currentAssistant = addMsg("assistant", ""); setText("topStatus", "生成"); pipeline("llm", "生成中"); break;
     case "llm_delta": pipeline("llm", "输出中"); appendAssistant(data.text || ""); break;
-    case "audio_format": state.ttsSampleRate = Number(data.sample_rate || 24000); setText("dialogState", "播放"); pipeline("tts", "播放中"); break;
+    case "audio_format": state.ttsSampleRate = Number(data.sample_rate || 24000); setText("topStatus", "播放"); pipeline("tts", "播放中"); break;
     case "metric": setMetric(data.name, data.value); break;
     case "error": showToast(data.message || "出错", "error"); pipeline("error"); break;
-    case "busy": setText("dialogState", "忙碌"); break;
+    case "busy": setText("topStatus", "忙碌"); break;
     case "interrupted":
       stopAssistantAudio(); state.busy = false; state.assistantActive = false;
       state.interrupting = false; state.dropAudioUntilNextAssistant = false;
-      setText("dialogState", state.micActive ? "监听中" : "待机"); pipeline(state.micActive ? "vad" : "idle", "已打断"); break;
+      setText("topStatus", state.micActive ? "监听中" : "待机"); pipeline(state.micActive ? "vad" : "idle", "已打断"); break;
     case "reset":
       stopAssistantAudio(); state.busy = false; state.assistantActive = false;
       state.interrupting = false; state.dropAudioUntilNextAssistant = false;
-      applyConversation(data.conversation, true); setText("dialogState", "待机"); pipeline("idle"); break;
+      applyConversation(data.conversation, true); setText("topStatus", "待机"); pipeline("idle"); break;
     case "turn_done":
       pipeline("done", "完成");
-      releaseAfterPlayback({ onReleased: () => { setText("dialogState", state.micActive ? "监听中" : "待机"); } }); break;
+      releaseAfterPlayback({ onReleased: () => { setText("topStatus", state.micActive ? "监听中" : "待机"); } }); break;
     default: break;
   }
 }
@@ -118,8 +118,7 @@ function applyConversation(conversation, renderMessages) {
   if (!conversation) return;
   state.activeConversation = conversation; state.activeConversationId = conversation.id;
   localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversation.id);
-  setText("conversationTitle", conversation.title || "新的对话");
-  setText("conversationMeta", formatConversationMeta(conversation));
+  setText("topStatus", conversation.title || "新的对话");
   if (renderMessages) renderTranscript(conversation.messages || []);
   loadConversations().then(() => { if (onTranscriptUpdated) onTranscriptUpdated(); });
 }
@@ -137,7 +136,7 @@ export async function sendText() {
   const input = $("#textInput"); const text = input?.value.trim(); if (!text) return;
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) { showToast("对话后端未连接", "error"); return; }
   if (state.busy && state.assistantActive) interruptAssistant("text");
-  state.busy = true; setText("dialogState", "发送"); pipeline("llm", "已发送");
+  state.busy = true; setText("topStatus", "发送"); pipeline("llm", "已发送");
   state.ws.send(JSON.stringify({ type: "text", text })); input.value = ""; resizeComposerInput(input);
 }
 
@@ -151,7 +150,7 @@ export function interruptAssistant(reason = "voice") {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   state.interrupting = true; state.lastInterruptAt = performance.now(); state.bargeInFrames = 0;
   state.dropAudioUntilNextAssistant = true; stopAssistantAudio(); state.busy = false; state.assistantActive = false;
-  setText("dialogState", "打断"); state.ws.send(JSON.stringify({ type: "interrupt", reason }));
+  setText("topStatus", "打断"); state.ws.send(JSON.stringify({ type: "interrupt", reason }));
 }
 
 /* ---- pipeline compact (for dashboard sidebar) ---- */
