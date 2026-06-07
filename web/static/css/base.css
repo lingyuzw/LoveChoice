@@ -215,6 +215,9 @@ button svg, .service-action svg, .small-button svg, .nav-tabs svg { width: 15px;
 button:disabled { opacity: 0.35; cursor: not-allowed; }
 .full { width: 100%; }
 
+/* hidden labels for always-enabled checkboxes */
+label.hidden { display: none; }
+
 /* cards & metrics */
 .mini-stack { display: grid; gap: 8px; }
 .mini-card, .metric-card {

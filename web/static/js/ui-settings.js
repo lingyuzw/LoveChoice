@@ -182,7 +182,7 @@ function createProfileCard(service) {
       <button class="small-button test-log" type="button"><i data-lucide="scroll-text"></i>日志</button>
     </div>
     <div class="profile-summary"><span>${service.running ? "运行中" : "待启动"}</span><span>端口 ${port}</span></div>
-    <details class="advanced-profile" open>
+    <details class="advanced-profile">
       <summary><i data-lucide="sliders-horizontal"></i>高级启动参数</summary>
       <div class="inline-actions command-actions" style="margin-bottom:6px">
         <button class="small-button copy-command" type="button"><i data-lucide="copy"></i>复制命令</button>

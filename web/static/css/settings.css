@@ -32,6 +32,8 @@
 .advanced-profile .form-grid { margin-top: 6px; }
 .profile-command { min-height: 140px; color: var(--text-soft); background: var(--bg); font-size: var(--font-sm); }
 
+.log-viewer { color: var(--text-soft); background: var(--bg); }
+
 /* theme section */
 .theme-section {
   display: grid; gap: 8px;

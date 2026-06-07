@@ -84,7 +84,7 @@
 .log-viewer, #logOutput {
   height: 480px; margin: 0; padding: 12px; overflow: auto;
   border: 1px solid var(--border); border-radius: var(--radius-md);
-  color: #c9d1d9; background: #0b1120;
+  color: var(--text-soft); background: var(--bg);
   font-size: 11px; line-height: 1.55; white-space: pre-wrap;
 }
 

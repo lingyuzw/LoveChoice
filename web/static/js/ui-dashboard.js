@@ -198,7 +198,8 @@ function drawScope() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#090c10"; ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0d1117";
+  ctx.fillRect(0, 0, width, height);
 
   // small grid
   ctx.strokeStyle = "rgba(255,255,255,0.03)"; ctx.lineWidth = 0.5;
