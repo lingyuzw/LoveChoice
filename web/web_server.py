@@ -437,7 +437,12 @@ class ServiceManager:
             self.update_service(service_id, overrides)
 
         process = self.processes.get(service_id)
-        if process is not None and process.poll() is None:
+        # 检查是否已在运行（安全 poll，避免虚拟 Popen 崩溃）
+        try:
+            already_running = process is not None and process.poll() is None
+        except AttributeError:
+            already_running = process is not None and _is_pid_alive(process.pid)
+        if already_running:
             return await self.status(service_id)
 
         service = self.services[service_id]
@@ -1111,7 +1116,9 @@ class DialogSession:
         self.send_lock = asyncio.Lock()
         self.processing = False
         self.current_task: asyncio.Task | None = None
-        self.reset_tts_pcm_state()
+        self.tts_pcm_pending = b""
+        self.tts_pcm_tail = np.array([], dtype=np.int16)
+        self.tts_pcm_started = False
 
     async def run(self) -> None:
         # 后台预加载 VAD 模型，减少首次语音的延迟
