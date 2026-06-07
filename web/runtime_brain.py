@@ -699,7 +699,7 @@ class ToolManager:
             return {"ok": False, "error": "query is empty", "results": []}
         limit = max(1, min(10, limit))
         url = "https://duckduckgo.com/html/"
-        headers = {"User-Agent": "Mozilla/5.0 buding-tool/1.0"}
+        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url, params={"q": query})
         resp.raise_for_status()
@@ -714,7 +714,7 @@ class ToolManager:
             url = f"https://news.google.com/rss/search?q={quote(topic)}&hl=zh-CN&gl={region}&ceid={region}:zh-Hans"
         else:
             url = f"https://news.google.com/rss?hl=zh-CN&gl={region}&ceid={region}:zh-Hans"
-        headers = {"User-Agent": "Mozilla/5.0 buding-tool/1.0"}
+        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
         resp.raise_for_status()
@@ -735,7 +735,7 @@ class ToolManager:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             return {"ok": False, "error": "Only http/https URLs are supported"}
-        headers = {"User-Agent": "Mozilla/5.0 buding-tool/1.0"}
+        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
         resp.raise_for_status()

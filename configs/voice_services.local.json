@@ -20,7 +20,7 @@
       "label": "CosyVoice3 TTS",
       "description": "Your trained CosyVoice3 API with internal vLLM acceleration.",
       "cwd": "/root/autodl-tmp/project/CosyVoice",
-      "command": "/opt/miniconda/bin/conda run --no-capture-output -n cosyvoice_vllm python -u /root/autodl-tmp/project/buding/tts/trained_tts_server.py --repo_dir /root/autodl-tmp/project/CosyVoice --model_dir /root/autodl-tmp/project/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B --speaker hanser --load_vllm --fp16 --host 0.0.0.0 --port 50000",
+      "command": "/opt/miniconda/bin/conda run --no-capture-output -n cosyvoice_vllm python -u /root/autodl-tmp/project/LoveChoice/tts/trained_tts_server.py --repo_dir /root/autodl-tmp/project/CosyVoice --model_dir /root/autodl-tmp/project/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B --speaker hanser --load_vllm --fp16 --host 0.0.0.0 --port 50000",
       "health_url": "http://127.0.0.1:50000/health",
       "startup_wait_sec": 0
     }

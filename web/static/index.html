@@ -3,89 +3,162 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>buding</title>
+    <title>LoveChoice Voice Console</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body data-page="dashboard">
-    <div class="chat-app">
-      <header class="top-nav">
-        <a class="wordmark" href="/static/index.html">
-          <span>b</span>
-          <strong>buding</strong>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/static/index.html" aria-label="LoveChoice">
+          <span class="brand-mark">LC</span>
+          <span>
+            <strong>LoveChoice</strong>
+            <small>Voice Console</small>
+          </span>
         </a>
 
-        <nav class="top-links">
-          <a class="active" href="/static/index.html">对话</a>
-          <a href="/static/services.html">服务</a>
-          <a href="/static/settings.html">配置</a>
+        <nav class="nav-tabs" aria-label="主导航">
+          <a class="active" href="/static/index.html"><i data-lucide="messages-square"></i>对话</a>
+          <a href="/static/services.html"><i data-lucide="activity"></i>服务</a>
+          <a href="/static/settings.html"><i data-lucide="settings-2"></i>配置</a>
+          <a href="/static/services.html#logs-asr"><i data-lucide="scroll-text"></i>日志</a>
+          <a href="/static/settings.html#memory"><i data-lucide="brain"></i>记忆</a>
         </nav>
 
-        <span class="connection-pill" id="dialogState">连接中</span>
+        <div class="topbar-status">
+          <span class="status-pill" id="dialogState">连接中</span>
+        </div>
       </header>
 
-      <main class="chat-stage">
-        <aside class="conversation-rail">
-          <div class="rail-head">
-            <div>
-              <p class="eyebrow">sessions</p>
-              <h2>对话记录</h2>
-            </div>
-            <button class="icon-button" id="newConversationBtn" type="button" title="新对话">
+      <main class="voice-console">
+        <aside class="sidebar">
+          <section class="sidebar-section">
+            <button class="primary-action full" id="newConversationBtn" type="button">
               <i data-lucide="plus"></i>
+              新建对话
             </button>
-          </div>
-          <div class="conversation-list" id="conversationList"></div>
+          </section>
+
+          <section class="sidebar-section conversation-rail">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Sessions</p>
+                <h2>会话</h2>
+              </div>
+            </div>
+            <div class="conversation-list" id="conversationList"></div>
+          </section>
+
+          <section class="sidebar-section mini-stack">
+            <div class="mini-card">
+              <span>角色</span>
+              <strong>满穗</strong>
+            </div>
+            <div class="mini-card">
+              <span>模型</span>
+              <strong>qwen3.5-9b</strong>
+            </div>
+            <div class="service-dots" id="serviceOverview">
+              <span><i></i>ASR</span>
+              <span><i></i>LLM</span>
+              <span><i></i>TTS</span>
+            </div>
+          </section>
         </aside>
 
-        <section class="chat-workspace">
-          <section class="chat-hero">
+        <section class="main-panel chat-panel">
+          <div class="panel-toolbar">
             <div>
-              <p class="eyebrow">local voice session</p>
-              <h1>今天聊什么？</h1>
+              <p class="eyebrow">Voice Workspace</p>
+              <h1>语音 AI 工作台</h1>
             </div>
             <div class="runtime-chips">
               <span><b>ASR</b><strong id="asrMetric">--</strong></span>
               <span><b>首字</b><strong id="llmMetric">--</strong></span>
               <span><b>首音</b><strong id="ttsMetric">--</strong></span>
             </div>
-          </section>
+          </div>
 
-          <section class="conversation-shell">
-            <div class="conversation-current">
-              <div>
-                <p class="eyebrow">active thread</p>
-                <strong id="conversationTitle">新的对话</strong>
-              </div>
-              <span id="conversationMeta">本次 · 0 条</span>
+          <div class="conversation-current">
+            <div>
+              <p class="eyebrow">Active Thread</p>
+              <strong id="conversationTitle">新的对话</strong>
             </div>
+            <span id="conversationMeta">本次 · 0 条</span>
+          </div>
 
-            <div class="listen-strip">
-              <div class="listen-meta">
-                <span id="vadLabel">idle</span>
-                <span id="levelText">0%</span>
-              </div>
-              <canvas id="scopeCanvas" width="1280" height="160"></canvas>
-              <div class="level-track"><span id="levelBar"></span></div>
+          <div class="pipeline-strip" aria-label="当前语音链路">
+            <span class="pipeline-step" id="pipelineVad"><i data-lucide="radio"></i>VAD</span>
+            <span class="pipeline-step" id="pipelineAsr"><i data-lucide="captions"></i>ASR</span>
+            <span class="pipeline-step" id="pipelineLlm"><i data-lucide="sparkles"></i>LLM</span>
+            <span class="pipeline-step" id="pipelineTts"><i data-lucide="volume-2"></i>TTS</span>
+          </div>
+
+          <div class="transcript" id="transcript" aria-live="polite"></div>
+
+          <div class="listen-strip">
+            <div class="listen-meta">
+              <span id="vadLabel">idle</span>
+              <span id="levelText">0%</span>
             </div>
+            <canvas id="scopeCanvas" width="1280" height="160"></canvas>
+            <div class="level-track"><span id="levelBar"></span></div>
+          </div>
 
-            <div class="transcript" id="transcript" aria-live="polite"></div>
-
-            <div class="composer">
-              <button class="voice-button" id="micBtn" type="button" title="麦克风">
-                <i data-lucide="mic"></i>
-              </button>
-              <textarea id="textInput" rows="1" autocomplete="off" placeholder="输入文字，或者按麦克风开始说话"></textarea>
-              <button class="send-button" id="sendBtn" type="button" title="发送">
-                <i data-lucide="send"></i>
-              </button>
-              <button class="icon-button reset" id="resetBtn" type="button" title="新对话">
-                <i data-lucide="square-pen"></i>
-              </button>
-            </div>
-          </section>
+          <div class="composer">
+            <button class="voice-button" id="micBtn" type="button" title="麦克风">
+              <i data-lucide="mic"></i>
+            </button>
+            <textarea id="textInput" rows="1" autocomplete="off" placeholder="输入文字，或打开麦克风开始说话"></textarea>
+            <button class="send-button" id="sendBtn" type="button" title="发送">
+              <i data-lucide="send"></i>
+            </button>
+            <button class="icon-button danger" id="interruptBtn" type="button" title="打断/停止播放">
+              <i data-lucide="octagon-x"></i>
+            </button>
+            <button class="icon-button" id="resetBtn" type="button" title="新对话">
+              <i data-lucide="square-pen"></i>
+            </button>
+          </div>
         </section>
+
+        <aside class="inspector-panel">
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Pipeline</p>
+                <h2>链路状态</h2>
+              </div>
+            </div>
+            <div class="status-timeline">
+              <div><span class="status-dot" data-stage="vad"></span><strong>正在听</strong><small id="pipelineStateText">等待用户输入</small></div>
+              <div><span class="status-dot" data-stage="asr"></span><strong>识别</strong><small>Qwen3-ASR</small></div>
+              <div><span class="status-dot" data-stage="llm"></span><strong>思考</strong><small>OpenAI compatible</small></div>
+              <div><span class="status-dot" data-stage="tts"></span><strong>合成</strong><small id="playbackState">等待播放</small></div>
+            </div>
+          </section>
+
+          <section class="inspector-card">
+            <div class="metric-grid">
+              <div class="metric-card"><span>麦克风</span><strong id="micStateText">未开启</strong></div>
+              <div class="metric-card"><span>播放</span><strong id="audioStateText">空闲</strong></div>
+              <div class="metric-card"><span>打断</span><strong id="interruptStateText">就绪</strong></div>
+            </div>
+          </section>
+
+          <section class="inspector-card alert-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Errors</p>
+                <h2>最近错误</h2>
+              </div>
+            </div>
+            <p id="lastErrorText">暂无错误。</p>
+            <a class="small-button" href="/static/services.html#logs-asr"><i data-lucide="scroll-text"></i>查看日志</a>
+          </section>
+        </aside>
       </main>
     </div>
   </body>

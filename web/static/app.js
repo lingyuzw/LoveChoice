@@ -1,7 +1,8 @@
 const $ = (selector) => document.querySelector(selector);
 
 const page = document.body.dataset.page || "dashboard";
-const ACTIVE_CONVERSATION_KEY = "buding.activeConversationId";
+const ACTIVE_CONVERSATION_KEY = "lovechoice.activeConversationId";
+const PIPELINE_STEPS = ["vad", "asr", "llm", "tts"];
 
 const DEFAULT_SYSTEM = [
   "你以“满穗”的人设和聊天风格与用户对话。她是 24 岁女生，福建人，二本毕业，身高 158cm，体重 50kg，看起来软软小小的，但心里很有主意，不是随便被拿捏的人。她开朗活泼，内心强大，独立、有主见；平时比较懒，不太愿意出门，但一提到好吃的就会突然来精神，梦想是吃遍天下美食。",
@@ -108,7 +109,7 @@ const DEFAULT_SERVICES = [
     label: "CosyVoice3 TTS",
     description: "Trained CosyVoice3 streaming PCM API.",
     cwd: "/root/autodl-tmp/project/CosyVoice",
-    command: "/root/miniconda3/bin/conda run --no-capture-output -n cosyvoice_vllm python -u /root/autodl-tmp/project/buding/tts/trained_tts_server.py --repo_dir /root/autodl-tmp/project/CosyVoice --model_dir /root/autodl-tmp/project/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B --speaker hanser --load_vllm --fp16 --host 0.0.0.0 --port 50000",
+    command: "/root/miniconda3/bin/conda run --no-capture-output -n cosyvoice_vllm python -u /root/autodl-tmp/project/LoveChoice/tts/trained_tts_server.py --repo_dir /root/autodl-tmp/project/CosyVoice --model_dir /root/autodl-tmp/project/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B --speaker hanser --load_vllm --fp16 --host 0.0.0.0 --port 50000",
     health_url: "http://127.0.0.1:50000/health",
     startup_wait_sec: 0,
     running: false,
@@ -317,6 +318,7 @@ async function initDashboard() {
   $("#sendBtn")?.addEventListener("click", sendText);
   $("#resetBtn")?.addEventListener("click", newConversation);
   $("#newConversationBtn")?.addEventListener("click", newConversation);
+  $("#interruptBtn")?.addEventListener("click", () => interruptAssistant("manual"));
   const textInput = $("#textInput");
   textInput?.addEventListener("input", () => resizeComposerInput(textInput));
   textInput?.addEventListener("keydown", (event) => {
@@ -328,6 +330,7 @@ async function initDashboard() {
   resizeComposerInput(textInput);
 
   await loadConversations();
+  updatePipeline("idle");
   connectSocket();
   drawScope();
 }
@@ -536,6 +539,7 @@ function handleDialogEvent(data) {
   switch (data.type) {
     case "ready":
       setDialogState("待机");
+      updatePipeline("idle");
       break;
     case "conversation":
       applyConversation(data.conversation, { renderMessages: true });
@@ -553,10 +557,12 @@ function handleDialogEvent(data) {
       state.busy = false;
       setText("vadLabel", "speech");
       setDialogState("收音");
+      updatePipeline("vad", "正在听...");
       break;
     case "vad_end":
       setText("vadLabel", `${data.duration_ms || 0} ms`);
       setDialogState("识别");
+      updatePipeline("asr", "正在识别...");
       state.busy = true;
       break;
     case "vad_short":
@@ -565,6 +571,7 @@ function handleDialogEvent(data) {
     case "user":
       addMessage("user", data.text || "");
       state.currentAssistant = null;
+      updatePipeline("llm", "正在思考...");
       break;
     case "assistant_start":
       window.clearTimeout(state.releaseTimer);
@@ -573,16 +580,21 @@ function handleDialogEvent(data) {
       state.dropAudioUntilNextAssistant = false;
       state.currentAssistant = addMessage("assistant", "");
       setDialogState("生成");
+      updatePipeline("llm", "正在生成...");
       break;
     case "tool":
       setDialogState(`工具 ${data.id || ""}`);
       break;
     case "llm_delta":
+      updatePipeline("llm", "正在输出...");
       appendAssistant(data.text || "");
       break;
     case "audio_format":
       state.ttsSampleRate = Number(data.sample_rate || 24000);
       setDialogState("播放");
+      updatePipeline("tts", "正在合成/播放...");
+      setText("audioStateText", "播放中");
+      setText("playbackState", "正在播放");
       break;
     case "metric":
       setMetric(data.name, data.value);
@@ -590,6 +602,8 @@ function handleDialogEvent(data) {
     case "error":
       addMessage("system", data.message || "出错了");
       setDialogState("错误");
+      setText("lastErrorText", data.message || "出错了");
+      updatePipeline("error", "出错");
       break;
     case "busy":
       setDialogState("忙碌");
@@ -601,6 +615,8 @@ function handleDialogEvent(data) {
       state.interrupting = false;
       state.dropAudioUntilNextAssistant = false;
       setDialogState(state.micActive ? "监听中" : "待机");
+      setText("interruptStateText", "已打断");
+      updatePipeline(state.micActive ? "vad" : "idle", state.micActive ? "继续监听" : "已停止");
       break;
     case "reset":
       stopAssistantAudio();
@@ -610,8 +626,10 @@ function handleDialogEvent(data) {
       state.dropAudioUntilNextAssistant = false;
       applyConversation(data.conversation, { renderMessages: true });
       setDialogState("待机");
+      updatePipeline("idle");
       break;
     case "turn_done":
+      updatePipeline("done", "完成");
       releaseAfterPlayback();
       break;
     default:
@@ -626,6 +644,7 @@ function setText(id, text) {
 
 function setDialogState(text) {
   setText("dialogState", text);
+  setText("pipelineStateText", text);
 }
 
 function setMetric(name, value) {
@@ -633,6 +652,34 @@ function setMetric(name, value) {
   if (name === "asr_ms") setText("asrMetric", text);
   if (name === "llm_first_token_ms") setText("llmMetric", text);
   if (name === "tts_first_audio_ms") setText("ttsMetric", text);
+}
+
+function updatePipeline(stage = "idle", label = "") {
+  const activeIndex = PIPELINE_STEPS.indexOf(stage);
+  for (const [index, key] of PIPELINE_STEPS.entries()) {
+    const el = document.getElementById(`pipeline${key[0].toUpperCase()}${key.slice(1)}`);
+    if (!el) continue;
+    el.classList.remove("active", "done", "error");
+    if (stage === "error") {
+      el.classList.add("error");
+    } else if (stage === "done") {
+      el.classList.add("done");
+    } else if (index < activeIndex) {
+      el.classList.add("done");
+    } else if (index === activeIndex) {
+      el.classList.add("active");
+    }
+  }
+  document.querySelectorAll(".status-dot[data-stage]").forEach((dot) => {
+    dot.classList.toggle("active", dot.dataset.stage === stage || stage === "done");
+  });
+  if (label) setText("pipelineStateText", label);
+  if (stage === "idle") {
+    setText("pipelineStateText", "等待用户输入");
+    setText("audioStateText", "空闲");
+    setText("playbackState", "等待播放");
+    setText("interruptStateText", "就绪");
+  }
 }
 
 function addMessage(role, text) {
@@ -675,6 +722,7 @@ async function sendText() {
   if (state.busy && state.assistantActive) interruptAssistant("text");
   state.busy = true;
   setDialogState("发送");
+  updatePipeline("llm", "文本已发送");
   state.ws.send(JSON.stringify({ type: "text", text }));
   input.value = "";
   resizeComposerInput(input);
@@ -741,6 +789,8 @@ async function startMic() {
   if (micBtn) micBtn.innerHTML = '<i data-lucide="mic-off"></i>';
   renderIcons();
   setDialogState("监听中");
+  setText("micStateText", "监听中");
+  updatePipeline("vad", "正在听...");
 }
 
 function stopMic() {
@@ -759,6 +809,8 @@ function stopMic() {
   if (micBtn) micBtn.innerHTML = '<i data-lucide="mic"></i>';
   renderIcons();
   setDialogState("待机");
+  setText("micStateText", "未开启");
+  updatePipeline("idle");
 }
 
 function downsample(input, inputRate, outputRate) {
@@ -830,6 +882,8 @@ function interruptAssistant(reason = "voice") {
   state.busy = false;
   state.assistantActive = false;
   setDialogState("打断");
+  setText("interruptStateText", "打断中");
+  setText("audioStateText", "已停止");
   state.ws.send(JSON.stringify({ type: "interrupt", reason }));
 }
 
@@ -844,6 +898,8 @@ function stopAssistantAudio() {
   }
   state.playbackSources.clear();
   if (state.audioCtx) state.playheadTime = state.audioCtx.currentTime;
+  setText("audioStateText", "已停止");
+  setText("playbackState", "已停止");
 }
 
 async function schedulePcm16(arrayBuffer) {
@@ -885,6 +941,9 @@ function releaseAfterPlayback() {
     state.interrupting = false;
     state.dropAudioUntilNextAssistant = false;
     setDialogState(state.micActive ? "监听中" : "待机");
+    setText("audioStateText", "空闲");
+    setText("playbackState", "播放完成");
+    setText("interruptStateText", "就绪");
   }, remaining * 1000 + 140);
 }
 
@@ -952,6 +1011,7 @@ async function loadServices() {
     state.previewMode = true;
     setSystemState("静态预览");
   }
+  renderServiceOverview();
 
   if (page === "services") {
     renderServiceCards();
@@ -965,12 +1025,30 @@ function serviceSummaryText() {
   return `${running}/${state.services.length} 运行`;
 }
 
+function renderServiceOverview() {
+  const host = $("#serviceOverview");
+  if (!host) return;
+  const ids = ["asr", "llm", "tts"];
+  host.innerHTML = "";
+  for (const id of ids) {
+    const service = state.services.find((item) => item.id === id);
+    const status = service?.running ? "running" : service?.health?.ok === false ? "failed" : "";
+    const node = document.createElement("span");
+    node.className = status;
+    node.innerHTML = `<i></i>${id.toUpperCase()}`;
+    host.appendChild(node);
+  }
+}
+
 function initServices() {
   $("#startAllBtn")?.addEventListener("click", startAllServices);
   $("#stopAllBtn")?.addEventListener("click", stopAllServices);
+  $("#restartAllBtn")?.addEventListener("click", restartAllServices);
   $("#clearAllLogsBtn")?.addEventListener("click", clearAllServiceLogs);
   $("#healthBtn")?.addEventListener("click", loadServices);
   $("#refreshLogsBtn")?.addEventListener("click", () => refreshLogs(state.selectedLogService));
+  $("#copyLogBtn")?.addEventListener("click", copyCurrentLog);
+  $("#downloadLogBtn")?.addEventListener("click", downloadCurrentLog);
   const hashLog = location.hash.replace("#logs-", "");
   if (hashLog) state.selectedLogService = hashLog;
   renderServiceCards();
@@ -1167,11 +1245,13 @@ function renderServiceCards() {
 function createServiceCard(service) {
   const card = document.createElement("article");
   const healthOk = service.health?.ok;
-  card.className = `service-card ${service.running ? "active" : healthOk === false ? "failed" : ""}`;
+  const stateClass = service.running ? "active" : healthOk === false ? "failed" : "";
+  card.className = `service-card ${stateClass}`;
+  card.dataset.serviceCard = service.id;
   const port = service.health_url ? new URL(service.health_url).port || "--" : "--";
   const pid = service.external ? "external" : service.pid || "--";
-  const stateLabel = service.external ? "external" : service.running ? "running" : "stopped";
-  const health = service.health ? (service.health.ok ? "ok" : "fail") : "--";
+  const stateLabel = service.external ? "External" : service.running ? "Running" : healthOk === false ? "Failed" : "Stopped";
+  const health = service.health ? (service.health.ok ? "OK" : "Fail") : "--";
 
   card.innerHTML = `
     <div class="service-top">
@@ -1180,16 +1260,19 @@ function createServiceCard(service) {
         <strong></strong>
         <span></span>
       </div>
+      <b class="badge service-badge">${stateLabel}</b>
     </div>
     <div class="service-meta">
       <div class="meta-cell"><span>STATE</span><strong>${stateLabel}</strong></div>
       <div class="meta-cell"><span>PID</span><strong>${pid}</strong></div>
       <div class="meta-cell"><span>PORT</span><strong>${port}</strong></div>
       <div class="meta-cell"><span>HEALTH</span><strong>${health}</strong></div>
+      <div class="meta-cell wide"><span>LAST ERROR</span><strong>${healthOk === false ? "Health check failed" : "--"}</strong></div>
     </div>
     <div class="service-actions">
       <button class="service-action start" type="button"><i data-lucide="play"></i>启动</button>
       <button class="service-action stop" type="button"><i data-lucide="square"></i>停止</button>
+      <button class="service-action restart" type="button"><i data-lucide="refresh-ccw"></i>重启</button>
       <button class="service-action logs" type="button"><i data-lucide="scroll-text"></i>日志</button>
       <button class="service-action clear-logs" type="button"><i data-lucide="trash-2"></i>清日志</button>
       <a class="service-action" href="/static/settings.html#${service.id}"><i data-lucide="settings-2"></i>配置</a>
@@ -1199,6 +1282,7 @@ function createServiceCard(service) {
   card.querySelector(".service-title span").textContent = service.description || "";
   card.querySelector(".start").addEventListener("click", () => startService(service.id));
   card.querySelector(".stop").addEventListener("click", () => stopService(service.id));
+  card.querySelector(".restart").addEventListener("click", () => restartService(service.id));
   card.querySelector(".logs").addEventListener("click", () => refreshLogs(service.id));
   card.querySelector(".clear-logs").addEventListener("click", () => clearServiceLogs(service));
   return card;
@@ -1249,8 +1333,12 @@ function createProfileCard(service) {
       <span>${health}</span>
       <span>本地端口 ${port}</span>
     </div>
-    <details class="advanced-profile">
+    <details class="advanced-profile" ${page === "settings" ? "open" : ""}>
       <summary><i data-lucide="sliders-horizontal"></i>高级启动参数</summary>
+      <div class="inline-actions command-actions">
+        <button class="small-button copy-command" type="button"><i data-lucide="copy"></i>复制命令</button>
+        <button class="small-button test-log" type="button"><i data-lucide="scroll-text"></i>查看日志</button>
+      </div>
       <div class="form-grid">
         <label><span>Working Directory</span><input class="profile-cwd" type="text" /></label>
         <label><span>Health URL</span><input class="profile-health" type="text" /></label>
@@ -1265,8 +1353,18 @@ function createProfileCard(service) {
   card.querySelector(".profile-health").value = service.health_url || "";
   card.querySelector(".profile-wait").value = service.startup_wait_sec ?? 0;
   card.querySelector(".profile-command").value = service.command || "";
-  card.querySelector(".test-log").addEventListener("click", () => {
+  card.querySelectorAll(".test-log").forEach((button) => button.addEventListener("click", () => {
     location.href = `/static/services.html#logs-${service.id}`;
+  }));
+  card.querySelector(".copy-command")?.addEventListener("click", async () => {
+    const command = card.querySelector(".profile-command")?.value || "";
+    if (!command.trim()) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setSystemState("命令已复制");
+    } catch {
+      setSystemState("复制失败");
+    }
   });
   return card;
 }
@@ -1312,6 +1410,7 @@ async function saveSettingsPage() {
 }
 
 async function startService(serviceId) {
+  setServiceBusy(serviceId, "启动中...");
   if (state.previewMode) {
     patchLocalService(serviceId, { running: true, pid: "preview" });
     renderServiceCards();
@@ -1323,10 +1422,12 @@ async function startService(serviceId) {
     await refreshLogs(serviceId);
   } catch (error) {
     showLog(`启动失败：${error.message}`);
+    setServiceBusy(serviceId, "");
   }
 }
 
 async function stopService(serviceId) {
+  setServiceBusy(serviceId, "停止中...");
   if (state.previewMode) {
     patchLocalService(serviceId, { running: false, pid: null });
     renderServiceCards();
@@ -1338,7 +1439,36 @@ async function stopService(serviceId) {
     await refreshLogs(serviceId);
   } catch (error) {
     showLog(`停止失败：${error.message}`);
+    setServiceBusy(serviceId, "");
   }
+}
+
+async function restartService(serviceId) {
+  setServiceBusy(serviceId, "重启中...");
+  if (state.previewMode) {
+    patchLocalService(serviceId, { running: true, pid: "preview" });
+    renderServiceCards();
+    return;
+  }
+  try {
+    await fetchJson(`/api/services/${serviceId}/stop`, { method: "POST" });
+    await fetchJson(`/api/services/${serviceId}/start`, { method: "POST" });
+    await loadServices();
+    await refreshLogs(serviceId);
+  } catch (error) {
+    showLog(`重启失败：${error.message}`);
+    setServiceBusy(serviceId, "");
+  }
+}
+
+function setServiceBusy(serviceId, label) {
+  const card = document.querySelector(`[data-service-card="${serviceId}"]`);
+  if (!card) return;
+  card.querySelectorAll("button").forEach((button) => {
+    button.disabled = Boolean(label);
+  });
+  const badge = card.querySelector(".service-badge");
+  if (badge && label) badge.textContent = label;
 }
 
 async function startAllServices() {
@@ -1348,10 +1478,11 @@ async function startAllServices() {
     showLog("预览模式：已模拟启动全部服务。");
     return;
   }
-  showLog("starting all services...");
+  showLog("启动 ASR...\nASR OK\n启动 LLM...\nLLM OK\n启动 TTS...");
   try {
     await fetchJson("/api/services/start-all", { method: "POST" });
     await loadServices();
+    showLog("启动流程已提交。请刷新状态或查看各服务日志确认模型加载进度。");
   } catch (error) {
     showLog(`一键启动失败：${error.message}`);
   }
@@ -1370,6 +1501,23 @@ async function stopAllServices() {
     await loadServices();
   } catch (error) {
     showLog(`全部停止失败：${error.message}`);
+  }
+}
+
+async function restartAllServices() {
+  if (state.previewMode) {
+    state.services = state.services.map((service) => ({ ...service, running: true, pid: "preview" }));
+    renderServiceCards();
+    showLog("预览模式：已模拟重启全部服务。");
+    return;
+  }
+  showLog("停止全部服务...\n重新启动 ASR → LLM → TTS...");
+  try {
+    await fetchJson("/api/services/stop-all", { method: "POST" });
+    await fetchJson("/api/services/start-all", { method: "POST" });
+    await loadServices();
+  } catch (error) {
+    showLog(`全部重启失败：${error.message}`);
   }
 }
 
@@ -1434,6 +1582,30 @@ function showLog(text) {
   if (!output) return;
   output.textContent = text || "";
   output.scrollTop = output.scrollHeight;
+}
+
+async function copyCurrentLog() {
+  const text = $("#logOutput")?.textContent || "";
+  if (!text.trim()) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    setSystemState("日志已复制");
+  } catch {
+    setSystemState("复制失败");
+  }
+}
+
+function downloadCurrentLog() {
+  const text = $("#logOutput")?.textContent || "";
+  if (!text.trim()) return;
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `lovechoice-${state.selectedLogService || "service"}.log`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 200);
 }
 
 function startServicePolling() {

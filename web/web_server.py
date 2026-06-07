@@ -814,7 +814,7 @@ def create_app(args) -> FastAPI:
     # The web server is a single orchestration endpoint. The ASR/LLM/TTS models
     # still live in their own services so they can be restarted and tuned
     # independently.
-    app = FastAPI(title="Voice Web Console")
+    app = FastAPI(title="LoveChoice Voice Console")
     app.state.settings = load_persisted_settings(SessionSettings.from_args(args))
     enable_default_capabilities(app.state.settings)
     app.state.vad_store = VadModelStore(args.vad_device)

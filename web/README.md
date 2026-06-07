@@ -1,4 +1,4 @@
-# buding
+# LoveChoice Voice Console
 
 这是一个前端 + 后端控制台：
 

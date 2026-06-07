@@ -3,140 +3,165 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>buding settings</title>
+    <title>LoveChoice Settings</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body data-page="settings">
-    <div class="admin-app">
-      <header class="top-nav">
-        <a class="wordmark" href="/static/index.html">
-          <span>b</span>
-          <strong>buding</strong>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/static/index.html" aria-label="LoveChoice">
+          <span class="brand-mark">LC</span>
+          <span>
+            <strong>LoveChoice</strong>
+            <small>Voice Console</small>
+          </span>
         </a>
 
-        <nav class="top-links">
-          <a href="/static/index.html">对话</a>
-          <a href="/static/services.html">服务</a>
-          <a class="active" href="/static/settings.html">配置</a>
+        <nav class="nav-tabs" aria-label="主导航">
+          <a href="/static/index.html"><i data-lucide="messages-square"></i>对话</a>
+          <a href="/static/services.html"><i data-lucide="activity"></i>服务</a>
+          <a class="active" href="/static/settings.html"><i data-lucide="settings-2"></i>配置</a>
+          <a href="/static/services.html#logs-asr"><i data-lucide="scroll-text"></i>日志</a>
+          <a href="#memory"><i data-lucide="brain"></i>记忆</a>
         </nav>
 
-        <span class="connection-pill" id="systemState">静态预览</span>
+        <div class="topbar-status">
+          <span class="status-pill" id="systemState">静态预览</span>
+        </div>
       </header>
 
-      <main class="admin-stage settings-stage">
-        <section class="admin-head settings-head">
-          <div>
-            <p class="eyebrow">Configuration</p>
-            <h1>配置中心</h1>
-          </div>
-          <button class="primary-action" id="saveAllBtn" type="button">
+      <main class="settings-page">
+        <aside class="settings-nav">
+          <p class="eyebrow">Configuration</p>
+          <h1>配置中心</h1>
+          <a href="#engine"><i data-lucide="cpu"></i>模型引擎</a>
+          <a href="#prompt"><i data-lucide="message-square-text"></i>Prompt</a>
+          <a href="#tts"><i data-lucide="volume-2"></i>语音合成</a>
+          <a href="#vad"><i data-lucide="mic-vocal"></i>语音检测</a>
+          <a href="#commands"><i data-lucide="terminal-square"></i>服务命令</a>
+          <a href="#memory"><i data-lucide="brain"></i>记忆能力</a>
+          <button class="primary-action full" id="saveAllBtn" type="button">
             <i data-lucide="save"></i>
             应用配置
           </button>
-        </section>
+        </aside>
 
-        <section class="settings-layout refined">
-          <article class="settings-panel core-settings">
+        <section class="settings-content">
+          <article class="settings-panel" id="engine">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Chat Engine</p>
-                <h2>模型与语气</h2>
+                <p class="eyebrow">Model Engine</p>
+                <h2>模型引擎</h2>
               </div>
               <span class="soft-badge" id="apiKeyState">未保存，可填 sk-... 格式</span>
             </div>
-
-            <div class="settings-block">
-              <h3><i data-lucide="plug-zap"></i>OpenAI 兼容 API</h3>
-              <div class="form-grid">
-                <label><span>Model</span><input id="llmModel" type="text" /></label>
-                <label><span>Temperature</span><input id="temperature" type="number" min="0" max="1.5" step="0.01" /></label>
-                <label class="wide"><span>Chat Completions URL</span><input id="llmUrl" type="text" /></label>
-                <label class="wide"><span>API Key</span><input id="llmApiKey" type="password" autocomplete="off" /></label>
-              </div>
-            </div>
-
-            <div class="settings-block prompt-block">
-              <h3><i data-lucide="message-square-text"></i>Prompt</h3>
-              <label class="wide"><span>System Prompt</span><textarea class="prompt-textarea" id="systemPrompt"></textarea></label>
-            </div>
-
-            <div class="settings-block">
-              <h3><i data-lucide="audio-lines"></i>回复与语音</h3>
-              <div class="form-grid compact">
-                <label><span>Max Tokens</span><input id="maxTokens" type="number" min="32" max="4096" step="1" /></label>
-                <label><span>History Turns</span><input id="historyTurns" type="number" min="1" max="20" step="1" /></label>
-                <label><span>TTS Speed</span><input id="ttsSpeed" type="number" min="0.7" max="1.5" step="0.01" /></label>
-                <label><span>TTS Seed</span><input id="ttsSeed" type="number" min="0" step="1" /></label>
-                <label><span>TTS Volume</span><input id="ttsVolume" type="number" min="0.05" max="1.5" step="0.01" /></label>
-                <label><span>TTS Fade ms</span><input id="ttsFadeMs" type="number" min="0" max="40" step="1" /></label>
-              </div>
-            </div>
-
-            <div class="settings-block">
-              <h3><i data-lucide="mic-vocal"></i>语音检测</h3>
-              <div class="form-grid compact">
-                <label><span>Threshold</span><input id="vadThreshold" type="number" min="0.1" max="0.9" step="0.01" /></label>
-                <label><span>Silence ms</span><input id="vadMinSilence" type="number" min="120" max="1500" step="10" /></label>
-                <label><span>Speech Pad ms</span><input id="vadSpeechPad" type="number" min="0" max="500" step="10" /></label>
-                <label><span>Pre Speech ms</span><input id="preSpeech" type="number" min="0" max="800" step="10" /></label>
-                <label><span>Min Utterance ms</span><input id="minUtterance" type="number" min="100" max="1500" step="10" /></label>
-                <label><span>Max Utterance sec</span><input id="maxUtterance" type="number" min="2" max="60" step="1" /></label>
-              </div>
+            <div class="form-grid">
+              <label><span>ASR Mode</span><select id="asrMode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
+              <label><span>ASR Model</span><input id="asrModel" type="text" /></label>
+              <label class="wide"><span>ASR URL</span><input id="asrUrl" type="text" /></label>
+              <label><span>LLM Model</span><input id="llmModel" type="text" /></label>
+              <label><span>Temperature</span><input id="temperature" type="number" min="0" max="1.5" step="0.01" /></label>
+              <label><span>Max Tokens</span><input id="maxTokens" type="number" min="32" max="4096" step="1" /></label>
+              <label><span>History Turns</span><input id="historyTurns" type="number" min="1" max="20" step="1" /></label>
+              <label class="wide"><span>Chat Completions URL</span><input id="llmUrl" type="text" /></label>
+              <label class="wide"><span>API Key</span><input id="llmApiKey" type="password" autocomplete="off" /></label>
             </div>
           </article>
 
-          <aside class="settings-side">
-            <article class="settings-panel">
-              <div class="panel-head">
+          <article class="settings-panel" id="prompt">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Persona</p>
+                <h2>Prompt 配置</h2>
+              </div>
+              <div class="inline-actions">
+                <button class="small-button" type="button"><i data-lucide="rotate-ccw"></i>恢复默认</button>
+                <button class="small-button" type="button"><i data-lucide="save"></i>保存 Prompt</button>
+              </div>
+            </div>
+            <label class="wide"><span>System Prompt</span><textarea class="prompt-textarea" id="systemPrompt"></textarea></label>
+          </article>
+
+          <article class="settings-panel" id="tts">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Speech Synthesis</p>
+                <h2>语音合成</h2>
+              </div>
+            </div>
+            <div class="form-grid compact">
+              <label class="wide"><span>TTS URL</span><input id="ttsUrl" type="text" /></label>
+              <label><span>TTS Speed</span><input id="ttsSpeed" type="number" min="0.7" max="1.5" step="0.01" /></label>
+              <label><span>TTS Seed</span><input id="ttsSeed" type="number" min="0" step="1" /></label>
+              <label><span>TTS Volume</span><input id="ttsVolume" type="number" min="0.05" max="1.5" step="0.01" /></label>
+              <label><span>TTS Fade ms</span><input id="ttsFadeMs" type="number" min="0" max="40" step="1" /></label>
+            </div>
+          </article>
+
+          <article class="settings-panel" id="vad">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Voice Activity Detection</p>
+                <h2>语音检测</h2>
+              </div>
+            </div>
+            <div class="form-grid compact">
+              <label><span>Threshold</span><input id="vadThreshold" type="number" min="0.1" max="0.9" step="0.01" /></label>
+              <label><span>Silence ms</span><input id="vadMinSilence" type="number" min="120" max="1500" step="10" /></label>
+              <label><span>Speech Pad ms</span><input id="vadSpeechPad" type="number" min="0" max="500" step="10" /></label>
+              <label><span>Pre Speech ms</span><input id="preSpeech" type="number" min="0" max="800" step="10" /></label>
+              <label><span>Min Utterance ms</span><input id="minUtterance" type="number" min="100" max="1500" step="10" /></label>
+              <label><span>Max Utterance sec</span><input id="maxUtterance" type="number" min="2" max="60" step="1" /></label>
+            </div>
+          </article>
+
+          <article class="settings-panel" id="commands">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Command Editors</p>
+                <h2>服务命令</h2>
+              </div>
+              <a class="small-button" href="/static/services.html"><i data-lucide="activity"></i>查看服务</a>
+            </div>
+            <div class="profile-list command-editor-list" id="profileList"></div>
+          </article>
+
+          <article class="settings-panel" id="memory">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Always On</p>
+                <h2>记忆与联网能力</h2>
+              </div>
+            </div>
+            <div class="ability-grid">
+              <section class="ability-card active">
+                <div class="ability-icon"><i data-lucide="brain"></i></div>
                 <div>
-                  <p class="eyebrow">Always On</p>
-                  <h2>后台能力</h2>
+                  <strong>记忆</strong>
+                  <span id="memoryStatus">默认开启</span>
+                  <p id="memoryDetail">SQLite 自动记忆</p>
                 </div>
-              </div>
-
-              <div class="ability-grid">
-                <section class="ability-card active">
-                  <div class="ability-icon"><i data-lucide="brain"></i></div>
-                  <div>
-                    <strong>记忆</strong>
-                    <span id="memoryStatus">默认开启</span>
-                    <p id="memoryDetail">SQLite 自动记忆</p>
-                  </div>
-                </section>
-                <section class="ability-card active">
-                  <div class="ability-icon"><i data-lucide="globe-2"></i></div>
-                  <div>
-                    <strong>联网工具</strong>
-                    <span id="toolsStatus">默认自动调用</span>
-                    <p id="toolsDetail">热点新闻 / 搜索 / 天气</p>
-                  </div>
-                </section>
-              </div>
-
-              <div class="settings-block compact-block">
-                <div class="block-row">
-                  <h3><i data-lucide="archive"></i>最近记忆</h3>
-                  <div class="inline-actions">
-                    <button class="small-button" id="refreshMemoryBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
-                    <button class="small-button" id="addMemoryBtn" type="button"><i data-lucide="plus"></i>新增</button>
-                  </div>
-                </div>
-                <div class="runtime-list memory-compact" id="memoryList"></div>
-              </div>
-            </article>
-
-            <article class="settings-panel">
-              <div class="panel-head">
+              </section>
+              <section class="ability-card active">
+                <div class="ability-icon"><i data-lucide="globe-2"></i></div>
                 <div>
-                  <p class="eyebrow">Launch Profiles</p>
-                  <h2>服务摘要</h2>
+                  <strong>联网工具</strong>
+                  <span id="toolsStatus">默认自动调用</span>
+                  <p id="toolsDetail">热点新闻 / 搜索 / 天气</p>
                 </div>
+              </section>
+            </div>
+            <div class="block-row">
+              <h3>最近记忆</h3>
+              <div class="inline-actions">
+                <button class="small-button" id="refreshMemoryBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
+                <button class="small-button" id="addMemoryBtn" type="button"><i data-lucide="plus"></i>新增</button>
               </div>
-              <div class="profile-list compact-profiles" id="profileList"></div>
-            </article>
-          </aside>
+            </div>
+            <div class="runtime-list memory-compact" id="memoryList"></div>
+          </article>
         </section>
       </main>
     </div>
