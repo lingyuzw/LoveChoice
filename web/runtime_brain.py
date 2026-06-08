@@ -132,6 +132,11 @@ class MemoryStore:
                 conn.execute("ALTER TABLE memory_items ADD COLUMN embedding BLOB")
             except sqlite3.OperationalError:
                 pass
+            # embedding 列，用于向量语义检索（余弦相似度）
+            try:
+                conn.execute("ALTER TABLE memory_items ADD COLUMN embedding BLOB")
+            except sqlite3.OperationalError:
+                pass
 
     async def _get_embedding(self, text: str, llm_url: str = "http://127.0.0.1:8080/v1/embeddings") -> list[float] | None:
         """调用 llama.cpp /v1/embeddings 获取文本的向量表示。"""
@@ -148,6 +153,21 @@ class MemoryStore:
         except Exception:
             return None
 
+
+    async def _get_embedding(self, text: str, llm_url: str = "http://127.0.0.1:8080/v1/embeddings") -> list[float] | None:
+        """调用 llama.cpp /v1/embeddings 获取文本的向量表示。"""
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.post(
+                    llm_url,
+                    json={"input": text, "model": "text-embedding"},
+                )
+            resp.raise_for_status()
+            data = resp.json()
+            embedding = (data.get("data") or [{}])[0].get("embedding")
+            return embedding
+        except Exception:
+            return None
     def list_memories(self, settings: Any, limit: int = 200, query: str = "", layer: str = "") -> list[dict]:
         self.apply_decay(settings)
         clauses = []
@@ -279,60 +299,52 @@ class MemoryStore:
             key_norm = normalize_key(key) + ":" + normalize_key(time_text)
 
         with self.session() as conn:
-            # UPSERT: 原子地处理 INSERT 或 UPDATE，避免 SELECT-then-UPDATE 的并发竞态。
-            # 首次插入时 confidence / importance / layer 由 INSERT 分支决定；
-            # 冲突时 confidence 累加，layer 按规则逐层升级，importance 取更大值。
             confidence = clamp(float(item.get("confidence", 0.45)), 0.0, 1.0)
             if source == "manual":
                 layer = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "mid"
                 confidence = max(confidence, 0.85)
 
             conn.execute(
-                """
-                INSERT INTO memory_items (
-                    id, key, key_norm, value, layer, count, confidence, importance,
-                    first_seen_at, last_seen_at, last_changed_at, pinned, source,
-                    memory_type, time_text, event_date, time_of_day
-                )
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(key_norm) DO UPDATE SET
-                    value = excluded.value,
-                    layer = CASE
-                        WHEN excluded.layer = 'long' OR memory_items.pinned THEN 'long'
-                        WHEN excluded.layer = 'mid' AND memory_items.layer = 'short' THEN 'mid'
-                        ELSE memory_items.layer
-                    END,
-                    count = memory_items.count + 1,
-                    confidence = MIN(1.0, memory_items.confidence + ?),
-                    importance = MAX(memory_items.importance, ?),
-                    last_seen_at = excluded.last_seen_at,
-                    last_changed_at = excluded.last_changed_at,
-                    pinned = MAX(memory_items.pinned, ?)
-                """,
+                "INSERT INTO memory_items ("
+                " id, key, key_norm, value, layer, count, confidence, importance,"
+                " first_seen_at, last_seen_at, last_changed_at, pinned, source,"
+                " memory_type, time_text, event_date, time_of_day"
+                ") VALUES ("
+                " ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?,"
+                " ?, ?, ?"
+                ")"
+                " ON CONFLICT(key_norm) DO UPDATE SET"
+                f" value = excluded.value,"
+                f" layer = CASE"
+                f"  WHEN excluded.layer = 'long' OR memory_items.pinned THEN 'long'"
+                f"  WHEN excluded.layer = 'mid' AND memory_items.layer = 'short' THEN 'mid'"
+                f"  ELSE memory_items.layer END,"
+                f" count = memory_items.count + 1,"
+                f" confidence = MIN(1.0, memory_items.confidence + {confidence_gain!r}),"
+                f" importance = MAX(memory_items.importance, {importance!r}),"
+                f" last_seen_at = excluded.last_seen_at,"
+                f" last_changed_at = excluded.last_changed_at,"
+                f" pinned = MAX(memory_items.pinned, {1 if item.get('pinned') else 0!r})",
                 (
-                    str(uuid.uuid4()),  # id (used on INSERT only)
+                    str(uuid.uuid4()),
                     key,
                     key_norm,
                     value,
                     layer,
                     confidence,
                     importance,
-                    now,   # first_seen_at
-                    now,   # last_seen_at
-                    now,   # last_changed_at
+                    now,
+                    now,
+                    now,
                     1 if item.get("pinned") else 0,
                     source,
                     memory_type,
                     time_text,
                     event_date,
                     time_of_day,
-                    confidence_gain,      # confidence 增量
-                    importance,           # MAX 比较值
-                    1 if item.get("pinned") else 0,  # pinned
                 ),
             )
 
-            # UPSERT 不会返回 id，需要从 key_norm 回查
             row = conn.execute("SELECT id FROM memory_items WHERE key_norm = ?", (key_norm,)).fetchone()
             memory_id = row["id"] if row else ""
 
@@ -343,7 +355,6 @@ class MemoryStore:
             row = conn.execute("SELECT * FROM memory_items WHERE id = ?", (memory_id,)).fetchone()
 
         return self.row_to_dict(row)
-
     def apply_decay(self, settings: Any) -> dict:
         now = now_ts()
         short_delete_days = float(getattr(settings, "memory_short_delete_days", 180))
@@ -525,6 +536,55 @@ async def _extract_memory_candidates_llm(user_text: str, extract_fn) -> list[dic
         # 解析 LLM 返回的 JSON 数组
         result_text = re.sub(r"^```(?:json)?|```$", "", result_text.strip(), flags=re.I | re.M).strip()
         # 找到 JSON 数组
+        match = re.search(r"\[.*\]", result_text, flags=re.S)
+        if match:
+            data = json.loads(match.group(0))
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    if not item.get("value") or not item.get("key"):
+                        continue
+                    candidates.append({
+                        "key": compact_text(item["key"], 120),
+                        "value": compact_text(item["value"], 300),
+                        "layer": "short",
+                        "confidence": 0.55,
+                        "importance": clamp(float(item.get("importance", 0.45)), 0.0, 1.0),
+                        "source": "chat",
+                        "memory_type": item.get("memory_type", "semantic_fact"),
+                        "time_text": item.get("time_text", ""),
+                        "event_date": item.get("event_date", ""),
+                        "time_of_day": item.get("time_of_day", "unknown"),
+                        "confidence_gain": 0.12,
+                    })
+    except Exception:
+        pass
+    return candidates
+
+
+EXTRACT_MEMORY_PROMPT = (
+    "从用户消息中提取可记忆的事实性信息。仅提取明确表述的偏好、身份、状态或事件。\n"
+    "输出 JSON 数组，每项包含：\n"
+    "- memory_type: \"semantic_fact\" 或 \"episodic_event\"\n"
+    "- key: 简短的记忆键名（中文）\n"
+    "- value: 记忆内容（中文）\n"
+    "- importance: 重要性 0.0-1.0（偏好/身份 0.7+，闲聊状态 0.4-0.6，随手提及 0.2-0.4）\n"
+    "- time_text: 时间表达式（仅 episodic_event 需要，否则空字符串）\n"
+    "- event_date: ISO 日期（仅 episodic_event 需要，否则空字符串）\n"
+    "- time_of_day: morning/noon/afternoon/evening/night/unknown\n\n"
+    "如果没有可提取的信息，输出空数组 []。\n\n"
+    "用户消息："
+)
+
+
+async def extract_memory_candidates_llm(user_text: str, extract_fn) -> list[dict]:
+    """用 LLM 从用户消息中提取记忆候选。extract_fn(text) -> str 是异步函数。"""
+    candidates: list[dict] = []
+    try:
+        prompt = EXTRACT_MEMORY_PROMPT + user_text
+        result_text = await extract_fn(prompt)
+        result_text = re.sub(r"^```(?:json)?|```$", "", result_text.strip(), flags=re.I | re.M).strip()
         match = re.search(r"\[.*\]", result_text, flags=re.S)
         if match:
             data = json.loads(match.group(0))

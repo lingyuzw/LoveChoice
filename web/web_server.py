@@ -1474,8 +1474,10 @@ class DialogSession:
             "stream": True,
             "temperature": self.settings.temperature,
             "max_tokens": self.settings.max_tokens,
-            "top_p": 0.9,
-            "repeat_penalty": 1.08,
+            "top_p": 0.95,
+            "repeat_penalty": 1.18,
+            "frequency_penalty": 0.4,
+            "presence_penalty": 0.3,
         }
         buffer = ""
         full_answer = ""
