@@ -113,8 +113,9 @@ def format_cosyvoice3_text(text: str) -> str:
     ):
         text = text.replace(marker, "")
     text = text.strip()
-    # 直接传干净的中文文本，不加任何 prompt 前缀。CosyVoice3 可以零样本合成。
-    return text
+    # CosyVoice3 内部强制要求 <|endofprompt|> 标记存在（作为 SFT 格式分隔符），
+    # 但不能带可朗读的英文 prompt 文本，否则会被模型语音化输出。
+    return f"<|endofprompt|>{text}"
 
 
 def warmup_model(text: str = DEFAULT_WARMUP_TEXT) -> None:
