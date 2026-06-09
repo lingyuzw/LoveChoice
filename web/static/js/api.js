@@ -245,11 +245,12 @@ export async function installIntegration(id) {
   return syncIntegrations(await fetchJson(`/api/integrations/${encodeURIComponent(id)}/install`, { method: "POST" }));
 }
 
-export async function startIntegrationBridge(id, branchwhisperUrl = "http://127.0.0.1:7860") {
+export async function startIntegrationBridge(id, branchwhisperUrl = "") {
+  const body = branchwhisperUrl ? { branchwhisper_url: branchwhisperUrl } : {};
   return syncIntegrations(await fetchJson(`/api/integrations/${encodeURIComponent(id)}/bridge/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branchwhisper_url: branchwhisperUrl }),
+    body: JSON.stringify(body),
   }));
 }
 

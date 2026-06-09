@@ -142,11 +142,54 @@ def require_integration_dialog_access(request: Request) -> None:
 
 
 def local_branchwhisper_url(request: Request) -> str:
+    override = (
+        os.environ.get("BRANCHWHISPER_BRIDGE_URL")
+        or os.environ.get("BUDING_BRIDGE_URL")
+        or os.environ.get("BRANCHWHISPER_PUBLIC_URL")
+        or os.environ.get("BUDING_PUBLIC_URL")
+    )
+    if override:
+        return override.rstrip("/")
+    app_port = getattr(request.app.state, "server_port", None)
+    if app_port:
+        return f"http://127.0.0.1:{int(app_port)}"
     server = request.scope.get("server") or ("", 7860)
-    port = request.url.port
-    if port is None and isinstance(server, (tuple, list)) and len(server) > 1:
-        port = server[1]
+    port = server[1] if isinstance(server, (tuple, list)) and len(server) > 1 else request.url.port
     return f"http://127.0.0.1:{int(port or 7860)}"
+
+
+def unique_urls(urls: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for url in urls:
+        normalized = str(url or "").rstrip("/")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
+async def resolve_branchwhisper_url(request: Request, preferred: str = "") -> str:
+    override = os.environ.get("BRANCHWHISPER_BRIDGE_URL") or os.environ.get("BUDING_BRIDGE_URL")
+    if override:
+        return override.rstrip("/")
+
+    candidates = unique_urls(
+        [
+            preferred,
+            local_branchwhisper_url(request),
+            "http://127.0.0.1:7860",
+        ]
+    )
+    for url in candidates:
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                response = await client.get(f"{url}/api/health")
+            if response.status_code < 500:
+                return url
+        except Exception:
+            continue
+    return candidates[0] if candidates else "http://127.0.0.1:7860"
 
 
 def service_warmup_key(service_id: str, settings: SessionSettings) -> str:
@@ -318,6 +361,8 @@ def create_app(args) -> FastAPI:
     # still live in their own services so they can be restarted and tuned
     # independently.
     app = FastAPI(title="枝语 BranchWhisper")
+    app.state.server_host = args.host
+    app.state.server_port = args.port
     app.state.settings = load_persisted_settings(SessionSettings.from_args(args), SETTINGS_CONFIG)
     enable_default_capabilities(app.state.settings)
     app.state.vad_store = VadModelStore(args.vad_device)
@@ -634,9 +679,10 @@ def create_app(args) -> FastAPI:
     async def start_integration(integration_id: str, request: Request):
         require_local_service_control(request)
         try:
+            branchwhisper_url = await resolve_branchwhisper_url(request)
             result = await app.state.integration_manager.start_bridge(
                 integration_id,
-                branchwhisper_url=local_branchwhisper_url(request),
+                branchwhisper_url=branchwhisper_url,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Integration not found") from exc
@@ -653,9 +699,10 @@ def create_app(args) -> FastAPI:
         require_local_service_control(request)
         app.state.integration_manager.stop_process(integration_id)
         try:
+            branchwhisper_url = await resolve_branchwhisper_url(request)
             result = await app.state.integration_manager.start_bridge(
                 integration_id,
-                branchwhisper_url=local_branchwhisper_url(request),
+                branchwhisper_url=branchwhisper_url,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Integration not found") from exc
@@ -698,8 +745,9 @@ def create_app(args) -> FastAPI:
     async def start_integration_bridge(integration_id: str, request: Request, payload: dict | None = Body(default=None)):
         require_local_service_control(request)
         payload = payload or {}
-        branchwhisper_url = str(
-            payload.get("branchwhisper_url") or payload.get("buding_url") or "http://127.0.0.1:7860"
+        branchwhisper_url = await resolve_branchwhisper_url(
+            request,
+            str(payload.get("branchwhisper_url") or payload.get("buding_url") or ""),
         )
         try:
             result = await app.state.integration_manager.start_bridge(
