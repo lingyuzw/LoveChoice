@@ -221,6 +221,26 @@
   gap: 6px;
 }
 
+.integration-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.integration-log-toolbar select {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  font-size: var(--font-sm);
+}
+.integration-log-toolbar .danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
 .integration-timing-list,
 .integration-contact-list {
   display: grid;

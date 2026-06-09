@@ -253,9 +253,13 @@ export async function startIntegrationBridge(id, branchwhisperUrl = "http://127.
   }));
 }
 
-export async function fetchIntegrationLogs(id) {
-  const data = await fetchJson(`/api/integrations/${encodeURIComponent(id)}/logs?max_bytes=36000`);
+export async function fetchIntegrationLogs(id, scope = "all") {
+  const data = await fetchJson(`/api/integrations/${encodeURIComponent(id)}/logs?max_bytes=64000&scope=${encodeURIComponent(scope)}`);
   return data.logs || "";
+}
+
+export async function clearIntegrationLogs(id) {
+  return fetchJson(`/api/integrations/${encodeURIComponent(id)}/logs`, { method: "DELETE" });
 }
 
 export async function updateIntegrationContact(integrationId, senderId, data) {

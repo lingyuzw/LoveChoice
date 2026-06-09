@@ -557,6 +557,31 @@ class IntegrationManager:
             data = stream.read()
         return data.decode("utf-8", errors="replace")
 
+    def read_logs_scoped(self, integration_id: str, max_bytes: int = 36000, scope: str = "all") -> str:
+        text = self.read_logs(integration_id, max_bytes=max_bytes)
+        if scope != "current" or not text:
+            return text
+        markers = [
+            "\n===== ",
+        ]
+        start_tokens = ("[session] bridge started", "[process] start:")
+        start_index = -1
+        for token in start_tokens:
+            idx = text.rfind(token)
+            if idx > start_index:
+                start_index = idx
+        if start_index == -1:
+            return ""
+        header_index = text.rfind(markers[0], 0, start_index)
+        return text[header_index + 1 if header_index >= 0 else start_index :]
+
+    def clear_logs(self, integration_id: str) -> dict:
+        path = self.log_path(integration_id)
+        if path.exists():
+            path.unlink()
+        self.append_log(integration_id, "[logs] cleared")
+        return {"ok": True, "id": safe_id(integration_id)}
+
     async def install_weixin_cli(self, integration_id: str) -> dict:
         integration = self.require_integration(integration_id)
         return await self.run_command(integration, ["npx", "-y", "@tencent-weixin/openclaw-weixin-cli", "install"], timeout=600)
@@ -566,7 +591,12 @@ class IntegrationManager:
         if action not in {"start", "stop", "restart", "status"}:
             raise ValueError("unsupported gateway action")
         result = await self.run_openclaw(integration, ["gateway", action], timeout=45)
-        if action == "start" and result["ok"]:
+        disabled_hint = self.gateway_disabled_hint(result)
+        if disabled_hint:
+            result = {**result, "ok": False, "gateway_disabled": True, "hint": disabled_hint}
+            next_status = "logged_in" if self.weixin_accounts(integration) else "stopped"
+            self.mark_status(integration["id"], next_status, disabled_hint)
+        elif action == "start" and result["ok"]:
             self.mark_status(integration["id"], "running")
         elif action == "stop" and result["ok"]:
             self.mark_status(integration["id"], "stopped")
@@ -575,6 +605,16 @@ class IntegrationManager:
         elif not result["ok"]:
             self.mark_status(integration["id"], "failed", result["stderr"] or result["stdout"])
         return result
+
+    def gateway_disabled_hint(self, result: dict) -> str:
+        text = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
+        lowered = text.lower()
+        if "gateway service disabled" in lowered or "systemd user services are unavailable" in lowered:
+            return (
+                "OpenClaw gateway systemd 服务不可用。容器环境下这是常见情况，"
+                "请使用“启动桥接”运行 BranchWhisper 的前台桥接进程。"
+            )
+        return ""
 
     async def login(self, integration_id: str) -> dict:
         integration = self.require_integration(integration_id)
@@ -621,6 +661,7 @@ class IntegrationManager:
         self.runtime[integration_id]["started_at"] = now_text()
         self.runtime[integration_id]["command"] = command
         self.mark_status(integration_id, status)
+        self.append_log(integration_id, f"[session] bridge started pid={proc.pid}")
         return {"ok": True, "status": status, "pid": proc.pid, "log_file": str(path)}
 
     def stop_process(self, integration_id: str) -> dict:

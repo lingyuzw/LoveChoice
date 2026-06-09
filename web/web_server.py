@@ -621,7 +621,10 @@ def create_app(args) -> FastAPI:
     async def start_integration(integration_id: str, request: Request):
         require_local_service_control(request)
         try:
-            result = await app.state.integration_manager.gateway_action(integration_id, "start")
+            result = await app.state.integration_manager.start_bridge(
+                integration_id,
+                branchwhisper_url=str(request.base_url).rstrip("/"),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Integration not found") from exc
         return {"result": result, **app.state.integration_manager.list_integrations()}
@@ -630,18 +633,17 @@ def create_app(args) -> FastAPI:
     async def stop_integration(integration_id: str, request: Request):
         require_local_service_control(request)
         process_result = app.state.integration_manager.stop_process(integration_id)
-        try:
-            gateway_result = await app.state.integration_manager.gateway_action(integration_id, "stop")
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Integration not found") from exc
-        return {"result": {"process": process_result, "gateway": gateway_result}, **app.state.integration_manager.list_integrations()}
+        return {"result": {"process": process_result}, **app.state.integration_manager.list_integrations()}
 
     @app.post("/api/integrations/{integration_id}/restart")
     async def restart_integration(integration_id: str, request: Request):
         require_local_service_control(request)
         app.state.integration_manager.stop_process(integration_id)
         try:
-            result = await app.state.integration_manager.gateway_action(integration_id, "restart")
+            result = await app.state.integration_manager.start_bridge(
+                integration_id,
+                branchwhisper_url=str(request.base_url).rstrip("/"),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Integration not found") from exc
         return {"result": result, **app.state.integration_manager.list_integrations()}
@@ -696,9 +698,18 @@ def create_app(args) -> FastAPI:
         return {"result": result, **app.state.integration_manager.list_integrations()}
 
     @app.get("/api/integrations/{integration_id}/logs")
-    async def integration_logs(integration_id: str, request: Request, max_bytes: int = 36000):
+    async def integration_logs(integration_id: str, request: Request, max_bytes: int = 36000, scope: str = "all"):
         require_local_service_control(request)
-        return {"id": integration_id, "logs": app.state.integration_manager.read_logs(integration_id, max_bytes=max_bytes)}
+        return {
+            "id": integration_id,
+            "scope": scope,
+            "logs": app.state.integration_manager.read_logs_scoped(integration_id, max_bytes=max_bytes, scope=scope),
+        }
+
+    @app.delete("/api/integrations/{integration_id}/logs")
+    async def clear_integration_logs(integration_id: str, request: Request):
+        require_local_service_control(request)
+        return app.state.integration_manager.clear_logs(integration_id)
 
     @app.get("/api/integrations/{integration_id}/contacts")
     async def integration_contacts(integration_id: str, request: Request):

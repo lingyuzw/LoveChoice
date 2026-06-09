@@ -23,6 +23,8 @@ import {
 /* ---- init ---- */
 
 let eventsBound = false;
+let toolProviderDraft = {};
+let editingToolProvider = "";
 
 export async function initSettings() {
   setupSettingsEvents();
@@ -58,6 +60,12 @@ function setupSettingsEvents() {
   $("#saveAllBtn")?.addEventListener("click", saveSettingsPage);
   $("#toolResolveBtn")?.addEventListener("click", runToolResolve);
   $("#addBotProfileBtn")?.addEventListener("click", addBotProfile);
+  $("#toolProviderCancelBtn")?.addEventListener("click", closeToolProviderModal);
+  $("#toolProviderApplyBtn")?.addEventListener("click", applyToolProviderModal);
+  document.querySelector("#toolProviderModal .modal-close")?.addEventListener("click", closeToolProviderModal);
+  $("#toolProviderModal")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeToolProviderModal();
+  });
   document.querySelectorAll("#themeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => {
       const theme = btn.dataset.theme;
@@ -187,37 +195,33 @@ function renderToolProviders() {
   const host = $("#toolProviderGrid");
   if (!host) return;
   host.innerHTML = "";
-  const config = state.toolConfig || {};
-  for (const [key, fields] of Object.entries(PROVIDER_FIELDS)) {
+  toolProviderDraft = structuredCloneSafe(state.toolConfig || {});
+  for (const key of Object.keys(PROVIDER_FIELDS)) {
+    const provider = toolProviderDraft[key] || {};
     const card = document.createElement("section");
-    card.className = "tool-provider-card";
+    card.className = `tool-provider-card overview-card ${provider.enabled === false ? "disabled" : "enabled"}`;
     card.dataset.providerKey = key;
-    const title = document.createElement("div");
-    title.className = "tool-provider-head";
-    title.innerHTML = `<strong>${PROVIDER_LABELS[key] || key}</strong><small>${key}</small>`;
-    const grid = document.createElement("div");
-    grid.className = "form-grid compact";
-    for (const field of fields) {
-      const label = document.createElement("label");
-      const span = document.createElement("span");
-      span.textContent = field;
-      const current = config[key]?.[field];
-      const input = document.createElement(field === "enabled" || field.endsWith("_enabled") ? "select" : "input");
-      input.dataset.providerField = field;
-      if (input.tagName === "SELECT") {
-        input.innerHTML = `<option value="true">启用</option><option value="false">关闭</option>`;
-        input.value = String(current ?? true);
-      } else {
-        input.type = field.includes("key") || field.includes("webhook") ? "password" : "text";
-        input.placeholder = config[key]?.[`${field}_masked`] || "";
-        input.value = field.includes("key") || field.includes("webhook") ? "" : (current ?? "");
-      }
-      label.append(span, input);
-      grid.appendChild(label);
-    }
-    card.append(title, grid);
+    const head = document.createElement("div");
+    head.className = "tool-provider-head";
+    head.innerHTML = `<strong>${PROVIDER_LABELS[key] || key}</strong><small>${key}</small>`;
+    const status = document.createElement("div");
+    status.className = "tool-provider-status";
+    const providerName = provider.provider || (key === "url_fetch" ? "built-in" : "default");
+    const hasSecret = Boolean(provider.api_key_set || provider.webhook_url_set || provider.api_key || provider.webhook_url);
+    status.innerHTML = `
+      <span>${provider.enabled === false ? "已关闭" : "已启用"}</span>
+      <span>${escapeHtml(providerName)}</span>
+      <span>${hasSecret ? "密钥已配置" : "免密/未配置密钥"}</span>
+    `;
+    const action = document.createElement("button");
+    action.className = "secondary-action";
+    action.type = "button";
+    action.append(createIcon("sliders-horizontal"), document.createTextNode("配置"));
+    action.addEventListener("click", () => openToolProviderModal(key));
+    card.append(head, status, action);
     host.appendChild(card);
   }
+  renderIcons();
 }
 
 function collectToolConfig() {
@@ -227,16 +231,85 @@ function collectToolConfig() {
     timeout: Number(value("toolsTimeout", state.currentConfig.tools_timeout || 12)),
     max_result_chars: Number(value("toolsMaxResultChars", state.currentConfig.tools_max_result_chars || 4000)),
   };
-  document.querySelectorAll("[data-provider-key]").forEach((card) => {
-    const key = card.dataset.providerKey;
-    result[key] = {};
-    card.querySelectorAll("[data-provider-field]").forEach((input) => {
-      const field = input.dataset.providerField;
-      if (input.tagName === "SELECT") result[key][field] = input.value === "true";
-      else if (input.value.trim()) result[key][field] = input.value.trim();
-    });
-  });
+  for (const key of Object.keys(PROVIDER_FIELDS)) result[key] = { ...(toolProviderDraft[key] || {}) };
   return result;
+}
+
+function openToolProviderModal(key) {
+  editingToolProvider = key;
+  const provider = toolProviderDraft[key] || {};
+  setText("toolProviderModalTitle", `${PROVIDER_LABELS[key] || key}配置`);
+  const summary = $("#toolProviderModalSummary");
+  if (summary) {
+    summary.innerHTML = `
+      <span>${provider.enabled === false ? "当前关闭" : "当前启用"}</span>
+      <span>Provider: ${escapeHtml(provider.provider || "default")}</span>
+      <span>${provider.api_key_set || provider.webhook_url_set ? "密钥已保存" : "未保存密钥"}</span>
+    `;
+  }
+  const host = $("#toolProviderModalFields");
+  if (host) {
+    host.innerHTML = "";
+    for (const field of PROVIDER_FIELDS[key] || []) {
+      const label = document.createElement("label");
+      const span = document.createElement("span");
+      span.textContent = fieldLabel(field);
+      const current = provider[field];
+      const input = document.createElement(field === "enabled" || field.endsWith("_enabled") ? "select" : "input");
+      input.dataset.providerField = field;
+      if (input.tagName === "SELECT") {
+        input.innerHTML = `<option value="true">启用</option><option value="false">关闭</option>`;
+        input.value = String(current ?? true);
+      } else {
+        input.type = field.includes("key") || field.includes("webhook") ? "password" : "text";
+        input.placeholder = provider[`${field}_masked`] || "";
+        input.value = field.includes("key") || field.includes("webhook") ? "" : (current ?? "");
+      }
+      label.append(span, input);
+      host.appendChild(label);
+    }
+  }
+  $("#toolProviderModal").hidden = false;
+  renderIcons();
+}
+
+function applyToolProviderModal() {
+  if (!editingToolProvider) return;
+  const next = { ...(toolProviderDraft[editingToolProvider] || {}) };
+  document.querySelectorAll("#toolProviderModalFields [data-provider-field]").forEach((input) => {
+    const field = input.dataset.providerField;
+    if (input.tagName === "SELECT") next[field] = input.value === "true";
+    else if (input.value.trim()) next[field] = input.value.trim();
+  });
+  toolProviderDraft[editingToolProvider] = next;
+  closeToolProviderModal();
+  renderToolProviders();
+}
+
+function closeToolProviderModal() {
+  $("#toolProviderModal").hidden = true;
+  editingToolProvider = "";
+}
+
+function fieldLabel(field) {
+  return {
+    enabled: "启用",
+    provider: "Provider",
+    base_url: "接口地址",
+    api_key: "API Key",
+    default_location: "默认城市",
+    limit: "返回条数",
+    region: "区域",
+    user_agent: "User-Agent",
+    max_chars: "正文长度",
+    web_enabled: "Web 提醒",
+    weixin_enabled: "微信提醒",
+    webhook_url: "Webhook 地址",
+  }[field] || field;
+}
+
+function structuredCloneSafe(value) {
+  return JSON.parse(JSON.stringify(value || {}));
 }
 
 async function runToolResolve() {

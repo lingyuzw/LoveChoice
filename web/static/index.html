@@ -152,7 +152,14 @@
                 <div class="inline-actions">
                   <button class="secondary-action" id="integrationLoginBtn" type="button"><i data-lucide="scan-line"></i>扫码登录</button>
                   <button class="secondary-action" id="integrationInstallBtn" type="button"><i data-lucide="package-plus"></i>安装适配器</button>
+                </div>
+                <div class="integration-log-toolbar">
+                  <select id="integrationLogScope">
+                    <option value="current">本次启动</option>
+                    <option value="all">全部日志</option>
+                  </select>
                   <button class="icon-button" id="refreshIntegrationLogsBtn" type="button" title="刷新日志"><i data-lucide="rotate-cw"></i></button>
+                  <button class="icon-button danger" id="integrationClearLogsBtn" type="button" title="清空日志"><i data-lucide="trash-2"></i></button>
                 </div>
                 <div class="log-viewer integration-log" id="integrationLogOutput" role="log" aria-live="polite">暂无日志。</div>
               </section>
@@ -225,7 +232,7 @@
                 <label><span>工具超时秒</span><input id="toolsTimeout" type="number" min="2" max="60" step="1" /></label>
                 <label><span>结果最大字符</span><input id="toolsMaxResultChars" type="number" min="500" max="16000" step="100" /></label>
               </div>
-              <div class="tool-provider-grid" id="toolProviderGrid"></div>
+              <div class="tool-provider-grid tool-provider-overview" id="toolProviderGrid"></div>
               <div class="tool-resolve-row">
                 <input id="toolResolveInput" type="text" placeholder="测试一句话会调用哪个工具，例如：漳州今天天气怎么样" />
                 <button class="secondary-action" id="toolResolveBtn" type="button"><i data-lucide="route"></i>测试路由</button>
@@ -303,6 +310,21 @@
             <button class="primary-action" type="submit"><i data-lucide="save"></i>保存</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- tool provider modal -->
+    <div class="modal-overlay" id="toolProviderModal" hidden>
+      <div class="modal-panel tool-provider-modal-panel">
+        <div class="modal-head"><h2 id="toolProviderModalTitle">工具配置</h2><button class="icon-button modal-close" type="button"><i data-lucide="x"></i></button></div>
+        <div class="modal-body">
+          <div class="tool-provider-modal-summary" id="toolProviderModalSummary"></div>
+          <div class="form-grid" id="toolProviderModalFields"></div>
+          <div class="modal-actions">
+            <button class="secondary-action" id="toolProviderCancelBtn" type="button">取消</button>
+            <button class="primary-action" id="toolProviderApplyBtn" type="button"><i data-lucide="check"></i>应用</button>
+          </div>
+        </div>
       </div>
     </div>
   </body>

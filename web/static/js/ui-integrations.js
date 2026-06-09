@@ -6,6 +6,7 @@
 import { state } from "./state.js";
 import {
   createIntegration,
+  clearIntegrationLogs,
   deleteIntegration,
   fetchIntegrationLogs,
   installIntegration,
@@ -28,6 +29,7 @@ const DEFAULT_KEYWORDS = ["发语音", "说话", "念给我听", "语音回复",
 let eventsBound = false;
 let integrationsMounted = false;
 let editingIntegrationId = "";
+let logScope = "current";
 
 export function initIntegrations() {
   setupIntegrationEvents();
@@ -56,6 +58,11 @@ function setupIntegrationEvents() {
   $("#integrationLoginBtn")?.addEventListener("click", () => beginQrLogin());
   $("#integrationInstallBtn")?.addEventListener("click", () => runSelectedAction("install"));
   $("#refreshIntegrationLogsBtn")?.addEventListener("click", () => refreshSelectedLogs());
+  $("#integrationClearLogsBtn")?.addEventListener("click", clearSelectedLogs);
+  $("#integrationLogScope")?.addEventListener("change", (event) => {
+    logScope = event.target.value || "current";
+    refreshSelectedLogs();
+  });
   $("#integrationTestBtn")?.addEventListener("click", runDialogProbe);
   $("#integrationTestInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -193,11 +200,11 @@ function createIntegrationCard(integration) {
   meta.className = "integration-meta";
   const lastError = integration.last_error || integration.runtime?.last_error || "--";
   for (const [label, value] of [
-    ["ENABLED", integration.enabled ? "on" : "off"],
-    ["MODE", integration.reply_mode || "text"],
-    ["ACCOUNTS", integration.runtime?.account_count ?? 0],
+    ["启用", integration.enabled ? "已启用" : "已关闭"],
+    ["回复", integration.reply_mode || "text"],
+    ["账号", integration.runtime?.account_count ?? 0],
     ["PID", integration.pid || "--"],
-    ["ERROR", lastError],
+    ["提示", humanError(lastError)],
   ]) {
     meta.appendChild(metaCell(label, value));
   }
@@ -205,11 +212,10 @@ function createIntegrationCard(integration) {
   const actions = document.createElement("div");
   actions.className = "integration-actions";
   actions.append(
-    actionButton("启动", "play", () => handleCardAction(integration.id, "start")),
+    actionButton("启动桥接", "play", () => handleCardAction(integration.id, "start")),
     actionButton("停止", "square", () => handleCardAction(integration.id, "stop")),
     actionButton("重启", "refresh-ccw", () => handleCardAction(integration.id, "restart")),
     actionButton("编辑", "settings-2", () => openIntegrationModal(integration)),
-    actionButton("桥接", "cable", () => handleCardAction(integration.id, "bridge")),
     actionButton("删除", "trash-2", () => handleDelete(integration.id)),
   );
 
@@ -249,7 +255,7 @@ async function handleCardAction(id, action) {
     if (action === "restart") await restartIntegration(id);
     if (action === "bridge") await startIntegrationBridge(id);
     await refreshIntegrations({ quiet: true });
-    showToast("操作已发送", "success");
+    showToast(action === "start" || action === "bridge" ? "桥接进程已启动" : "操作已发送", "success");
   } catch (error) {
     showToast(`操作失败：${error.message}`, "error");
   }
@@ -520,11 +526,25 @@ async function refreshSelectedLogs(options = {}) {
   const output = $("#integrationLogOutput");
   if (!selected || !output) return;
   try {
-    const logs = await fetchIntegrationLogs(selected.id);
-    output.textContent = logs || "暂无日志。";
+    const logs = await fetchIntegrationLogs(selected.id, logScope);
+    output.textContent = logs || (logScope === "current" ? "本次启动还没有日志。切换到“全部日志”可查看历史记录。" : "暂无日志。");
     output.scrollTop = output.scrollHeight;
   } catch (error) {
     if (!options.quiet) showToast(`日志读取失败：${error.message}`, "error");
+  }
+}
+
+async function clearSelectedLogs() {
+  const selected = selectedIntegration();
+  if (!selected) return;
+  const ok = await showConfirm(`清空 ${selected.id} 的接入日志？`);
+  if (!ok) return;
+  try {
+    await clearIntegrationLogs(selected.id);
+    await refreshSelectedLogs();
+    showToast("接入日志已清空", "success");
+  } catch (error) {
+    showToast(`清空失败：${error.message}`, "error");
   }
 }
 
@@ -615,14 +635,23 @@ function statusClass(status) {
 
 function statusText(status) {
   return {
-    running: "运行中",
-    login: "登录中",
-    logged_in: "已登录",
-    starting: "启动中",
+    running: "桥接运行中",
+    login: "等待扫码",
+    logged_in: "已登录未启动",
+    starting: "桥接启动中",
     installing: "安装中",
     failed: "失败",
     stopped: "已停止",
   }[status] || "未知";
+}
+
+function humanError(text) {
+  const value = String(text || "").trim();
+  if (!value || value === "--") return "--";
+  if (value.includes("gateway systemd 服务不可用") || value.includes("Gateway service disabled")) {
+    return "容器中不用 Gateway，点启动桥接即可";
+  }
+  return compact(value, 36);
 }
 
 function loginStatusText(status) {
