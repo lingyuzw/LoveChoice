@@ -63,6 +63,16 @@ npm install -g @tencent-weixin/openclaw-weixin-cli
 openclaw --version
 ```
 
+如果是在 AutoDL、容器或自定义 Node 目录里安装，需要确保启动枝语的同一个 shell 里能找到 `node/npm/npx/openclaw`。例如：
+
+```bash
+export PATH=/root/autodl-tmp/tools/node/bin:$PATH
+node -v
+npm -v
+npx --version
+openclaw --version
+```
+
 然后进入接入页添加微信个人号实例，按页面提示扫码登录并启动桥接。
 
 ## 运行数据

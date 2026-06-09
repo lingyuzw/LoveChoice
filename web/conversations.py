@@ -69,6 +69,10 @@ class ConversationStore:
                     "role": role,
                     "content": content,
                     "source": message.get("source") or "",
+                    "display_name": message.get("display_name") or "",
+                    "avatar_url": message.get("avatar_url") or "",
+                    "platform_id": message.get("platform_id") or "",
+                    "sender_id": message.get("sender_id") or "",
                     "created_at": now,
                 }
             )

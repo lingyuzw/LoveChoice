@@ -157,6 +157,14 @@
                 <div class="log-viewer integration-log" id="integrationLogOutput" role="log" aria-live="polite">暂无日志。</div>
               </section>
               <section class="integration-panel">
+                <div class="panel-head"><div><p class="eyebrow">Latency</p><h2>最近耗时</h2></div></div>
+                <div class="integration-timing-list" id="integrationTimingList"></div>
+              </section>
+              <section class="integration-panel">
+                <div class="panel-head"><div><p class="eyebrow">Contacts</p><h2>联系人</h2></div></div>
+                <div class="integration-contact-list" id="integrationContactList"></div>
+              </section>
+              <section class="integration-panel">
                 <div class="panel-head"><div><p class="eyebrow">Dialog Probe</p><h2>链路测试</h2></div></div>
                 <div class="integration-test-row">
                   <input id="integrationTestInput" type="text" placeholder="发送一条测试消息..." autocomplete="off" />
@@ -177,6 +185,8 @@
             <h1>配置中心</h1>
             <a data-setting-nav="appearance"><i data-lucide="palette"></i>外观</a>
             <a data-setting-nav="engine"><i data-lucide="cpu"></i>模型引擎</a>
+            <a data-setting-nav="tools"><i data-lucide="globe-2"></i>联网工具</a>
+            <a data-setting-nav="botProfiles"><i data-lucide="bot"></i>Bot Profile</a>
             <a data-setting-nav="prompt"><i data-lucide="message-square-text"></i>Prompt</a>
             <a data-setting-nav="tts"><i data-lucide="volume-2"></i>语音合成</a>
             <a data-setting-nav="vad"><i data-lucide="mic-vocal"></i>语音检测</a>
@@ -195,18 +205,36 @@
               </div>
             </article>
             <article class="settings-panel" id="engine">
-              <div class="panel-head"><div><p class="eyebrow">Model Engine</p><h2>模型引擎</h2></div><span class="soft-badge" id="apiKeyState">未保存</span></div>
+              <div class="panel-head"><div><p class="eyebrow">Local Model Engine</p><h2>本地模型引擎</h2></div><span class="soft-badge">Local only</span></div>
               <div class="form-grid">
                 <label><span>ASR Mode</span><select id="asrMode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
                 <label><span>ASR Model</span><input id="asrModel" type="text" /></label>
                 <label class="wide"><span>ASR URL</span><input id="asrUrl" type="text" /></label>
-                <label><span>LLM Model</span><input id="llmModel" type="text" /></label>
+                <label><span>本地模型别名</span><input id="llmModel" type="text" /></label>
                 <label><span>Temperature</span><input id="temperature" type="number" min="0" max="1.5" step="0.01" /></label>
                 <label><span>Max Tokens</span><input id="maxTokens" type="number" min="32" max="4096" step="1" /></label>
                 <label><span>History Turns</span><input id="historyTurns" type="number" min="1" max="20" step="1" /></label>
-                <label class="wide"><span>Chat Completions URL</span><input id="llmUrl" type="text" /></label>
-                <label class="wide"><span>API Key</span><input id="llmApiKey" type="password" autocomplete="off" /></label>
+                <label class="wide"><span>本地 Chat Completions URL</span><input id="llmUrl" type="text" /></label>
               </div>
+            </article>
+            <article class="settings-panel" id="tools">
+              <div class="panel-head"><div><p class="eyebrow">Network Tools</p><h2>联网工具</h2></div></div>
+              <div class="form-grid compact">
+                <label><span>工具总开关</span><select id="toolsEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
+                <label><span>自动调用</span><select id="toolsAutoCall"><option value="true">启用</option><option value="false">关闭</option></select></label>
+                <label><span>工具超时秒</span><input id="toolsTimeout" type="number" min="2" max="60" step="1" /></label>
+                <label><span>结果最大字符</span><input id="toolsMaxResultChars" type="number" min="500" max="16000" step="100" /></label>
+              </div>
+              <div class="tool-provider-grid" id="toolProviderGrid"></div>
+              <div class="tool-resolve-row">
+                <input id="toolResolveInput" type="text" placeholder="测试一句话会调用哪个工具，例如：漳州今天天气怎么样" />
+                <button class="secondary-action" id="toolResolveBtn" type="button"><i data-lucide="route"></i>测试路由</button>
+              </div>
+              <pre class="tool-resolve-result" id="toolResolveResult">等待测试。</pre>
+            </article>
+            <article class="settings-panel" id="botProfiles">
+              <div class="panel-head"><div><p class="eyebrow">Bot Profiles</p><h2>Bot 人格</h2></div><button class="secondary-action" id="addBotProfileBtn" type="button"><i data-lucide="plus"></i>新增</button></div>
+              <div class="bot-profile-list" id="botProfileList"></div>
             </article>
             <article class="settings-panel settings-panel--prominent" id="prompt">
               <div class="panel-head"><div><p class="eyebrow">Persona</p><h2>Prompt 配置</h2></div></div>
@@ -265,6 +293,7 @@
           <div class="form-grid">
             <label><span>实例名</span><input id="integrationIdInput" type="text" autocomplete="off" placeholder="weixin_personal" /></label>
             <label><span>OpenClaw Profile</span><input id="integrationProfileInput" type="text" autocomplete="off" placeholder="branchwhisper" /></label>
+            <label><span>Bot Profile ID</span><input id="integrationBotProfileInput" type="text" autocomplete="off" placeholder="default" /></label>
             <label><span>回复模式</span><select id="integrationReplyMode"><option value="text">默认文字</option><option value="voice">默认语音</option></select></label>
             <label class="switch-label"><span>启用实例</span><input id="integrationEnabledInput" type="checkbox" /></label>
             <label class="wide"><span>语音触发词</span><textarea id="integrationKeywordsInput" placeholder="发语音&#10;说话&#10;念给我听"></textarea></label>

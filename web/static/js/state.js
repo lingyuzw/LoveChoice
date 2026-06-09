@@ -26,7 +26,6 @@ export const DEFAULT_CONFIG = {
   asr_model: "qwen3-asr",
   llm_url: "http://127.0.0.1:8080/v1/chat/completions",
   llm_model: "qwen3.5-9b",
-  llm_api_key: "",
   temperature: 0.35,
   max_tokens: 220,
   history_turns: 8,
@@ -157,4 +156,7 @@ export const state = {
 
   /* settings page */
   memories: [],
+  botProfiles: [],
+  toolConfig: {},
+  reminders: [],
 };

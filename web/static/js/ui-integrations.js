@@ -18,6 +18,8 @@ import {
   stopIntegration,
   testIntegrationDialog,
   updateIntegration,
+  updateIntegrationContact,
+  uploadAvatar,
 } from "./api.js";
 import { $, createIcon, renderIcons, setText, showConfirm, showSkeleton, showToast } from "./utils.js";
 
@@ -180,7 +182,7 @@ function createIntegrationCard(integration) {
   const name = document.createElement("strong");
   name.textContent = integration.id;
   const desc = document.createElement("small");
-  desc.textContent = `微信个人号 · profile ${integration.openclaw_profile || "branchwhisper"}`;
+  desc.textContent = `微信个人号 · OpenClaw ${integration.openclaw_profile || "branchwhisper"} · Bot ${integration.bot_profile_id || "default"}`;
   title.append(dot, name, document.createElement("br"), desc);
   const badge = document.createElement("span");
   badge.className = `service-badge ${statusClass(integration.status)}`;
@@ -277,6 +279,8 @@ function renderSelectedPanel() {
   setText("selectedIntegrationBadge", selected?.id || "--");
   renderLoginBox(selected);
   renderAccountList(selected);
+  renderTimingList(selected);
+  renderContactList(selected);
 }
 
 function renderLoginBox(selected) {
@@ -288,10 +292,24 @@ function renderLoginBox(selected) {
     return;
   }
   const session = state.integrationLoginSession?.integrationId === selected.id ? state.integrationLoginSession : null;
+  if (selected.status === "logged_in" && !session) {
+    const text = document.createElement("div");
+    text.className = "integration-login-placeholder";
+    text.innerHTML = `<strong>${escapeHtml(selected.id)}</strong><span>已登录。二维码会在扫码成功后自动隐藏。</span>`;
+    box.appendChild(text);
+    return;
+  }
   if (!session) {
     const text = document.createElement("div");
     text.className = "integration-login-placeholder";
     text.innerHTML = `<strong>${escapeHtml(selected.id)}</strong><span>点击“扫码登录”后在这里显示二维码；登录凭证保存在本机 OpenClaw profile 中。</span>`;
+    box.appendChild(text);
+    return;
+  }
+  if (["created", "binded_redirect"].includes(session.status)) {
+    const text = document.createElement("div");
+    text.className = "integration-login-placeholder";
+    text.innerHTML = `<strong>登录成功</strong><span>${escapeHtml(session.message || "账号已保存，二维码已隐藏。")}</span>`;
     box.appendChild(text);
     return;
   }
@@ -314,6 +332,98 @@ function renderLoginBox(selected) {
   expire.textContent = session.expires_at ? `有效期至 ${new Date(session.expires_at * 1000).toLocaleTimeString()}` : "";
   meta.append(title, message, expire);
   box.appendChild(meta);
+}
+
+function renderTimingList(selected) {
+  const host = $("#integrationTimingList");
+  if (!host) return;
+  host.innerHTML = "";
+  const items = selected?.recent_timings || [];
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "integration-empty compact";
+    empty.textContent = "还没有消息耗时。";
+    host.appendChild(empty);
+    return;
+  }
+  for (const item of items.slice(0, 10)) {
+    const row = document.createElement("div");
+    row.className = "integration-timing-item";
+    const total = Number(item.bridge_ms || item.total_ms || 0);
+    row.innerHTML = `
+      <strong>${escapeHtml(item.text || item.trace_id || "--")}</strong>
+      <span>总耗时 ${total}ms${item.send_status ? ` · ${escapeHtml(item.send_status)}` : ""}</span>
+      <small>receive ${Number(item.receive_ms || 0)} · tool ${Number(item.tool_ms || 0)} · llm ${Number(item.llm_ms || 0)} · tts ${Number(item.tts_ms || 0)} · send ${Number(item.send_ms || 0)}</small>
+    `;
+    host.appendChild(row);
+  }
+}
+
+function renderContactList(selected) {
+  const host = $("#integrationContactList");
+  if (!host) return;
+  host.innerHTML = "";
+  const contacts = selected?.contacts || [];
+  if (!contacts.length) {
+    const empty = document.createElement("div");
+    empty.className = "integration-empty compact";
+    empty.textContent = "收到微信消息后会自动出现联系人。";
+    host.appendChild(empty);
+    return;
+  }
+  for (const contact of contacts.slice(0, 12)) {
+    const row = document.createElement("div");
+    row.className = "integration-contact-item";
+    const avatar = document.createElement("div");
+    avatar.className = "integration-contact-avatar";
+    const avatarUrl = contact.avatar_url || contact.auto_avatar_url || "";
+    if (avatarUrl) {
+      const img = document.createElement("img");
+      img.src = avatarUrl;
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = "微";
+    }
+    const body = document.createElement("div");
+    body.className = "integration-contact-body";
+    body.innerHTML = `<strong>${escapeHtml(contact.remark_name || contact.display_name || contact.sender_id || "--")}</strong><small>${escapeHtml(contact.sender_id || "")}</small>`;
+    const edit = document.createElement("div");
+    edit.className = "integration-contact-edit";
+    const remark = document.createElement("input");
+    remark.type = "text";
+    remark.placeholder = "联系人备注";
+    remark.value = contact.remark_name || "";
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = "image/png,image/jpeg,image/webp,image/gif";
+    const save = document.createElement("button");
+    save.className = "secondary-action compact-action";
+    save.type = "button";
+    save.append(createIcon("save"), document.createTextNode("保存"));
+    save.addEventListener("click", () => saveContactProfile(selected.id, contact, remark, file));
+    edit.append(remark, file, save);
+    row.append(avatar, body, edit);
+    host.appendChild(row);
+  }
+}
+
+async function saveContactProfile(integrationId, contact, remarkInput, fileInput) {
+  try {
+    let avatarUrl = contact.avatar_url || "";
+    if (fileInput?.files?.[0]) {
+      const uploaded = await uploadAvatar(await fileToDataUrl(fileInput.files[0]));
+      avatarUrl = uploaded.asset?.url || avatarUrl;
+    }
+    await updateIntegrationContact(integrationId, contact.sender_id, {
+      account_id: contact.account_id || "",
+      remark_name: remarkInput?.value.trim() || "",
+      avatar_url: avatarUrl,
+    });
+    await refreshIntegrations({ quiet: true });
+    showToast("联系人资料已保存", "success");
+  } catch (error) {
+    showToast(`联系人保存失败：${error.message}`, "error");
+  }
 }
 
 function renderAccountList(selected) {
@@ -393,7 +503,9 @@ async function pollQrLogin(options = {}) {
       await refreshIntegrations({ quiet: true });
       await refreshSelectedLogs({ quiet: true });
       if (state.integrationLoginSession.status === "created") {
+        state.integrationLoginSession = null;
         showToast("微信登录成功，账号已保存", "success");
+        renderSelectedPanel();
       } else if (!options.quiet) {
         showToast(state.integrationLoginSession.message || "扫码登录结束", "error");
       }
@@ -446,6 +558,7 @@ function openIntegrationModal(integration = null) {
     idInput.disabled = Boolean(integration);
   }
   if ($("#integrationProfileInput")) $("#integrationProfileInput").value = integration?.openclaw_profile || "branchwhisper";
+  if ($("#integrationBotProfileInput")) $("#integrationBotProfileInput").value = integration?.bot_profile_id || "default";
   if ($("#integrationReplyMode")) $("#integrationReplyMode").value = integration?.reply_mode || "text";
   if ($("#integrationEnabledInput")) $("#integrationEnabledInput").checked = Boolean(integration?.enabled);
   if ($("#integrationKeywordsInput")) {
@@ -466,6 +579,7 @@ async function saveIntegrationForm(event) {
     id: $("#integrationIdInput")?.value.trim() || "weixin_personal",
     enabled: Boolean($("#integrationEnabledInput")?.checked),
     openclaw_profile: $("#integrationProfileInput")?.value.trim() || "branchwhisper",
+    bot_profile_id: $("#integrationBotProfileInput")?.value.trim() || "default",
     reply_mode: $("#integrationReplyMode")?.value || "text",
     voice_trigger_keywords: ($("#integrationKeywordsInput")?.value || "")
       .split(/\r?\n|[,，]/)
@@ -529,6 +643,15 @@ function loginStatusText(status) {
 
 function compact(text, limit) {
   return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function escapeHtml(value) {

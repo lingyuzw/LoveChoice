@@ -230,10 +230,12 @@ def llm_headers(settings: SessionSettings) -> dict[str, str]:
 
 
 def enable_default_capabilities(settings: SessionSettings) -> None:
-    settings.memory_enabled = True
-    settings.memory_extract_enabled = True
-    settings.tools_enabled = True
-    settings.tools_auto_call = True
+    """Compatibility hook kept for older launch scripts.
+
+    Defaults are already supplied by command-line arguments and persisted
+    settings. This function must not overwrite saved user choices on restart.
+    """
+    return None
 
 
 def add_settings_args(parser) -> None:

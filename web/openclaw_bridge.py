@@ -281,12 +281,28 @@ def call_branchwhisper(branchwhisper_url: str, integration_id: str, account_id: 
             "client_id": msg.get("client_id"),
             "context_token": msg.get("context_token") or "",
             "create_time_ms": msg.get("create_time_ms"),
+            "display_name": msg.get("display_name") or msg.get("nickname") or msg.get("nick_name") or "",
+            "avatar_url": msg.get("avatar_url") or msg.get("head_img_url") or msg.get("portrait") or "",
         },
     }
     with httpx.Client(timeout=120) as client:
         resp = client.post(f"{branchwhisper_url.rstrip('/')}/api/integrations/dialog", json=payload)
     resp.raise_for_status()
     return resp.json()
+
+
+def report_branchwhisper_timing(branchwhisper_url: str, integration_id: str, trace_id: str, patch: dict) -> None:
+    if not trace_id:
+        return
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(
+                f"{branchwhisper_url.rstrip('/')}/api/integrations/{integration_id}/timings/{trace_id}",
+                json=patch,
+            )
+            resp.raise_for_status()
+    except Exception as exc:
+        log(f"timing report failed trace={trace_id}: {exc}")
 
 
 def message_fingerprint(account_id: str, msg: dict, text: str) -> str:
@@ -333,11 +349,36 @@ def process_message(
         context_token = tokens.get(from_user_id, "")
 
     log(f"inbound account={account['account_id']} from={from_user_id} text={text[:120]}")
+    branch_started = time.perf_counter()
     result = call_branchwhisper(branchwhisper_url, integration_id, account["account_id"], msg, text)
+    branch_ms = int((time.perf_counter() - branch_started) * 1000)
     reply = str(result.get("reply_text") or "").strip()
+    trace_id = str(result.get("trace_id") or "")
     if reply:
-        message_id = send_text(client, account, from_user_id, reply, context_token=context_token)
-        log(f"sent text account={account['account_id']} to={from_user_id} client_id={message_id}")
+        send_started = time.perf_counter()
+        try:
+            message_id = send_text(client, account, from_user_id, reply, context_token=context_token)
+            send_ms = int((time.perf_counter() - send_started) * 1000)
+            total_ms = int((time.perf_counter() - branch_started) * 1000)
+            report_branchwhisper_timing(
+                branchwhisper_url,
+                integration_id,
+                trace_id,
+                {"dialog_ms": branch_ms, "send_ms": send_ms, "bridge_ms": total_ms, "send_status": "sent"},
+            )
+            log(
+                f"sent text account={account['account_id']} to={from_user_id} client_id={message_id} "
+                f"branch_ms={branch_ms} send_ms={send_ms} timings={result.get('timings') or {}}"
+            )
+        except Exception as exc:
+            send_ms = int((time.perf_counter() - send_started) * 1000)
+            report_branchwhisper_timing(
+                branchwhisper_url,
+                integration_id,
+                trace_id,
+                {"dialog_ms": branch_ms, "send_ms": send_ms, "send_status": "failed", "send_error": str(exc)[:240]},
+            )
+            raise
     if result.get("send_voice") and result.get("voice_file"):
         log(
             "voice reply generated but not sent as media yet: "

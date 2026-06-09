@@ -132,10 +132,34 @@ function setMetric(name, value) {
 
 /* ---- transcript ---- */
 
-function addMsg(role, text) {
+function addMsg(role, text, meta = {}) {
   const t = $("#transcript"); if (!t) return null;
-  const node = document.createElement("div"); node.className = `message ${role}`; node.textContent = text;
-  t.appendChild(node); scrollTranscript(); return node;
+  const row = document.createElement("div");
+  row.className = `message-row ${role}`;
+  const avatar = document.createElement("div");
+  avatar.className = "message-avatar";
+  const name = meta.display_name || (role === "user" ? "我" : "枝语");
+  if (meta.avatar_url) {
+    const image = document.createElement("img");
+    image.src = meta.avatar_url;
+    image.alt = name;
+    avatar.appendChild(image);
+  } else {
+    avatar.textContent = role === "user" ? "我" : "枝";
+  }
+  const body = document.createElement("div");
+  body.className = "message-body";
+  const label = document.createElement("small");
+  label.className = "message-name";
+  label.textContent = name;
+  const node = document.createElement("div");
+  node.className = `message ${role}`;
+  node.textContent = text;
+  body.append(label, node);
+  row.append(avatar, body);
+  t.appendChild(row);
+  scrollTranscript();
+  return node;
 }
 function appendAssistant(text) { if (!state.currentAssistant) state.currentAssistant = addMsg("assistant", ""); if (state.currentAssistant) state.currentAssistant.textContent += text; scrollTranscript(); }
 export function clearTranscript() {
@@ -144,7 +168,7 @@ export function clearTranscript() {
   state.currentAssistant = null;
 }
 function scrollTranscript() { const t = $("#transcript"); if (t) t.scrollTop = t.scrollHeight; }
-function renderTranscript(msgs) { clearTranscript(); for (const m of msgs) { if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || ""); } }
+function renderTranscript(msgs) { clearTranscript(); for (const m of msgs) { if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || "", m); } }
 
 /* ---- conversation ---- */
 

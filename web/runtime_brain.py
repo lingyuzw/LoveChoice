@@ -8,12 +8,15 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import httpx
+
+from tool_config import DEFAULT_TOOL_PROVIDER_CONFIG, deep_merge
 
 
 SECONDS_PER_DAY = 86400
@@ -788,6 +791,12 @@ def normalize_result_url(url: str) -> str:
 class ToolManager:
     BUILTIN_TOOLS = [
         {
+            "id": "time",
+            "name": "本机时间",
+            "description": "读取服务器本机当前时间、日期和星期，适合回答几点了、今天几号等问题。",
+            "args": {},
+        },
+        {
             "id": "web_search",
             "name": "网页搜索",
             "description": "搜索互联网上的公开网页，适合查最新信息、资料、教程和泛查询。",
@@ -817,17 +826,32 @@ class ToolManager:
             "description": "查询股票、汇率、币价、商品价格等公开财经信息。",
             "args": {"query": "标的或问题"},
         },
+        {
+            "id": "map",
+            "name": "地图",
+            "description": "查询地图、地址、路线、附近地点和距离信息。默认关闭，需要先在联网工具里配置地图 provider。",
+            "args": {"query": "地址、路线或地点问题"},
+        },
     ]
 
-    def __init__(self, config_path: Path):
+    def __init__(self, config_path: Path, provider_config=None):
         self.config_path = config_path
+        self.provider_config = provider_config
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
             self.save_config(self.default_config())
 
+    def providers(self) -> dict:
+        if self.provider_config is None:
+            return DEFAULT_TOOL_PROVIDER_CONFIG
+        return self.provider_config.load()
+
     def default_config(self) -> dict:
         return {
-            "builtins": {tool["id"]: {"enabled": True} for tool in self.BUILTIN_TOOLS},
+            "builtins": {
+                tool["id"]: {"enabled": tool["id"] != "map"}
+                for tool in self.BUILTIN_TOOLS
+            },
             "custom_tools": [],
         }
 
@@ -915,35 +939,46 @@ class ToolManager:
 
     def suggest_from_text(self, text: str) -> dict | None:
         lowered = text.lower()
+        if re.search(r"(几点|几号|星期几|礼拜几|当前时间|现在时间|现在几点|今天日期|今天几号)", text) and self.tool_exists("time"):
+            return {"id": "time", "arguments": {}}
         url_match = re.search(r"https?://[^\s，。！？]+", text)
         if url_match and self.tool_exists("url_fetch"):
             return {"id": "url_fetch", "arguments": {"url": url_match.group(0)}}
-        if re.search(r"(热点|新闻|最近发生|时事|头条)", text) and self.tool_exists("hot_news"):
+        if re.search(r"(热点|新闻|最近发生|时事|头条|今日消息|最新消息)", text) and self.tool_exists("hot_news"):
             topic = re.sub(r"(今天|现在|当前|最新|热点|新闻|帮我|查一下|看看|是什么|有哪些)", "", text).strip(" ，。？?")
             return {"id": "hot_news", "arguments": {"topic": topic[:40], "limit": 6}}
-        if re.search(r"(天气|下雨|气温|温度)", text) and self.tool_exists("weather"):
+        if re.search(r"(天气|下雨|气温|温度|冷不冷|热不热|降雨|空气质量)", text) and self.tool_exists("weather"):
             location = re.sub(r"(天气|下雨|气温|温度|今天|现在|查一下|怎么样|如何)", "", text).strip(" ，。？?")
             return {"id": "weather", "arguments": {"location": location or "北京"}}
-        if re.search(r"(股票|股价|汇率|币价|价格|金价|美股|基金|btc|eth|usd|cny)", lowered) and self.tool_exists("finance"):
+        if re.search(r"(地图|路线|地址|导航|附近|怎么走|距离)", text) and self.tool_exists("map"):
+            return {"id": "map", "arguments": {"query": text}}
+        if re.search(r"(股票|股价|汇率|币价|价格|金价|美股|基金|btc|eth|usd|cny|人民币|美元|港币)", lowered) and self.tool_exists("finance"):
             return {"id": "finance", "arguments": {"query": text}}
-        if re.search(r"(搜索|查一下|帮我查|网上|资料|最新)", text) and self.tool_exists("web_search"):
+        if re.search(r"(搜索|查一下|帮我查|网上|资料|最新|现在|当前|实时|官网|多少钱|哪里买|评价|怎么样)", text) and self.tool_exists("web_search"):
             return {"id": "web_search", "arguments": {"query": text, "limit": 5}}
         return None
 
     async def execute(self, tool_id: str, arguments: dict | None, timeout: float = 12, max_chars: int = 4000) -> dict:
         args = arguments or {}
         config = self.load_config()
-        if tool_id == "web_search":
-            result = await self.web_search(str(args.get("query") or ""), int(args.get("limit") or 5), timeout)
+        providers = self.providers()
+        if not providers.get("enabled", True):
+            return truncate_result({"ok": False, "tool": tool_id, "error": "tools are disabled"}, max_chars)
+        if tool_id == "time":
+            result = self.local_time()
+        elif tool_id == "web_search":
+            result = await self.web_search(str(args.get("query") or ""), int(args.get("limit") or 5), timeout, providers)
         elif tool_id == "hot_news":
-            result = await self.hot_news(str(args.get("topic") or ""), str(args.get("region") or "CN"), int(args.get("limit") or 6), timeout)
+            result = await self.hot_news(str(args.get("topic") or ""), str(args.get("region") or "CN"), int(args.get("limit") or 6), timeout, providers)
         elif tool_id == "url_fetch":
-            result = await self.url_fetch(str(args.get("url") or ""), timeout)
+            result = await self.url_fetch(str(args.get("url") or ""), timeout, providers)
         elif tool_id == "weather":
-            result = await self.weather(str(args.get("location") or "北京"), timeout)
+            result = await self.weather(str(args.get("location") or "北京"), timeout, providers)
         elif tool_id == "finance":
-            result = await self.web_search(str(args.get("query") or ""), int(args.get("limit") or 5), timeout)
+            result = await self.web_search(str(args.get("query") or ""), int(args.get("limit") or 5), timeout, providers)
             result["kind"] = "finance_search"
+        elif tool_id == "map":
+            result = await self.map_query(str(args.get("query") or ""), timeout, providers)
         else:
             custom = next((tool for tool in config["custom_tools"] if tool.get("id") == tool_id and tool.get("enabled", True)), None)
             if not custom:
@@ -952,12 +987,26 @@ class ToolManager:
 
         return truncate_result(result, max_chars)
 
-    async def web_search(self, query: str, limit: int = 5, timeout: float = 12) -> dict:
+    def local_time(self) -> dict:
+        now = datetime.now().astimezone()
+        return {
+            "ok": True,
+            "tool": "time",
+            "iso": now.isoformat(timespec="seconds"),
+            "text": now.strftime("%Y年%m月%d日 %H:%M:%S"),
+            "weekday": ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][now.weekday()],
+            "timezone": now.tzname() or "local",
+        }
+
+    async def web_search(self, query: str, limit: int = 5, timeout: float = 12, providers: dict | None = None) -> dict:
         if not query.strip():
             return {"ok": False, "error": "query is empty", "results": []}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("search", {})
+        if not provider.get("enabled", True):
+            return {"ok": False, "error": "search tool is disabled", "results": []}
         limit = max(1, min(10, limit))
-        url = "https://duckduckgo.com/html/"
-        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
+        url = str(provider.get("base_url") or "https://duckduckgo.com/html/")
+        headers = {"User-Agent": str((providers or {}).get("url_fetch", {}).get("user_agent") or "Mozilla/5.0 BranchWhisper/1.0")}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url, params={"q": query})
         resp.raise_for_status()
@@ -965,14 +1014,17 @@ class ToolManager:
         parser.feed(resp.text)
         return {"ok": True, "tool": "web_search", "query": query, "results": parser.links[:limit]}
 
-    async def hot_news(self, topic: str = "", region: str = "CN", limit: int = 6, timeout: float = 12) -> dict:
+    async def hot_news(self, topic: str = "", region: str = "CN", limit: int = 6, timeout: float = 12, providers: dict | None = None) -> dict:
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("news", {})
+        if not provider.get("enabled", True):
+            return {"ok": False, "error": "news tool is disabled", "results": []}
         limit = max(1, min(12, limit))
-        region = (region or "CN").upper()
+        region = (region or provider.get("region") or "CN").upper()
         if topic.strip():
             url = f"https://news.google.com/rss/search?q={quote(topic)}&hl=zh-CN&gl={region}&ceid={region}:zh-Hans"
         else:
             url = f"https://news.google.com/rss?hl=zh-CN&gl={region}&ceid={region}:zh-Hans"
-        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
+        headers = {"User-Agent": str((providers or {}).get("url_fetch", {}).get("user_agent") or "Mozilla/5.0 BranchWhisper/1.0")}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
         resp.raise_for_status()
@@ -989,26 +1041,36 @@ class ToolManager:
             )
         return {"ok": True, "tool": "hot_news", "topic": topic, "region": region, "results": items}
 
-    async def url_fetch(self, url: str, timeout: float = 12) -> dict:
+    async def url_fetch(self, url: str, timeout: float = 12, providers: dict | None = None) -> dict:
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("url_fetch", {})
+        if not provider.get("enabled", True):
+            return {"ok": False, "error": "url fetch tool is disabled"}
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             return {"ok": False, "error": "Only http/https URLs are supported"}
-        headers = {"User-Agent": "Mozilla/5.0 lovechoice-tool/1.0"}
+        max_chars = int(provider.get("max_chars") or 2500)
+        headers = {"User-Agent": str(provider.get("user_agent") or "Mozilla/5.0 BranchWhisper/1.0")}
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "html" not in content_type:
-            text = compact_text(resp.text, 2500)
+            text = compact_text(resp.text, max_chars)
             return {"ok": True, "tool": "url_fetch", "url": str(resp.url), "content_type": content_type, "text": text}
         parser = TextExtractParser()
         parser.feed(resp.text)
-        text = compact_text(" ".join(parser.text), 2500)
+        text = compact_text(" ".join(parser.text), max_chars)
         return {"ok": True, "tool": "url_fetch", "url": str(resp.url), "title": compact_text(parser.title, 180), "text": text}
 
-    async def weather(self, location: str, timeout: float = 12) -> dict:
-        location = location.strip() or "北京"
-        url = f"https://wttr.in/{quote(location)}"
+    async def weather(self, location: str, timeout: float = 12, providers: dict | None = None) -> dict:
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("weather", {})
+        if not provider.get("enabled", True):
+            return {"ok": False, "error": "weather tool is disabled"}
+        location = location.strip() or str(provider.get("default_location") or "北京")
+        if provider.get("provider") != "wttr":
+            return {"ok": False, "error": f"weather provider {provider.get('provider')} is not implemented yet"}
+        base_url = str(provider.get("base_url") or "https://wttr.in").rstrip("/")
+        url = f"{base_url}/{quote(location)}"
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(url, params={"format": "j1", "lang": "zh"})
         resp.raise_for_status()
@@ -1028,6 +1090,15 @@ class ToolManager:
                 "wind_kmph": current.get("windspeedKmph"),
             },
         }
+
+    async def map_query(self, query: str, timeout: float = 12, providers: dict | None = None) -> dict:
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("map", {})
+        if not provider.get("enabled", False):
+            return {"ok": False, "error": "map tool is disabled; configure a provider first"}
+        api_key = str(provider.get("api_key") or "").strip()
+        if not api_key:
+            return {"ok": False, "error": "map api_key is not configured"}
+        return {"ok": False, "error": "map provider is configured but route/place lookup is not implemented in this build", "query": query}
 
     async def custom_api(self, tool: dict, args: dict, timeout: float = 12) -> dict:
         method = str(tool.get("method") or "GET").upper()

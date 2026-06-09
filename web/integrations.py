@@ -20,6 +20,8 @@ import httpx
 from audio_pipeline import clean_for_tts, extract_chat_message_text
 from config import SessionSettings, llm_headers
 from conversations import ConversationStore
+from direct_answers import direct_answer_from_tool
+from profiles import BotProfileStore
 from runtime_brain import MemoryStore, ToolManager
 
 
@@ -183,6 +185,7 @@ class IntegrationManager:
                 }
             ],
             "sessions": {},
+            "contacts": {},
         }
 
     def load_config(self) -> dict:
@@ -199,12 +202,16 @@ class IntegrationManager:
         sessions = data.get("sessions")
         if isinstance(sessions, dict):
             base["sessions"] = {str(k): str(v) for k, v in sessions.items() if k and v}
+        contacts = data.get("contacts")
+        if isinstance(contacts, dict):
+            base["contacts"] = {str(k): self.normalize_contact(v) for k, v in contacts.items() if isinstance(v, dict)}
         return base
 
     def save_config(self, data: dict) -> dict:
         payload = {
             "integrations": [self.normalize_integration(item) for item in data.get("integrations", []) if isinstance(item, dict)],
             "sessions": data.get("sessions") if isinstance(data.get("sessions"), dict) else {},
+            "contacts": data.get("contacts") if isinstance(data.get("contacts"), dict) else {},
         }
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.config_path.with_suffix(self.config_path.suffix + ".tmp")
@@ -226,6 +233,7 @@ class IntegrationManager:
             "type": integration_type,
             "enabled": bool(item.get("enabled", False)),
             "openclaw_profile": safe_id(str(item.get("openclaw_profile") or "branchwhisper"), fallback="branchwhisper"),
+            "bot_profile_id": safe_id(str(item.get("bot_profile_id") or "default"), fallback="default"),
             "reply_mode": str(item.get("reply_mode") or "text") if str(item.get("reply_mode") or "text") in {"text", "voice"} else "text",
             "voice_trigger_keywords": keywords or list(DEFAULT_VOICE_TRIGGERS),
             "status": str(item.get("status") or "stopped"),
@@ -283,6 +291,8 @@ class IntegrationManager:
         item["accounts"] = accounts
         item["account"] = runtime.get("account") or (accounts[0]["id"] if accounts else "")
         item["last_message_at"] = runtime.get("last_message_at") or ""
+        item["recent_timings"] = runtime.get("recent_timings") or []
+        item["contacts"] = self.integration_contacts(item["id"])
         return item
 
     def weixin_accounts(self, integration: dict) -> list[dict]:
@@ -356,6 +366,115 @@ class IntegrationManager:
         self.save_config(data)
         self.append_log(integration_id, "[config] deleted integration")
         return True
+
+    def contact_key(self, integration_id: str, sender_id: str, account_id: str = "") -> str:
+        return f"{safe_id(integration_id)}:{safe_id(account_id or 'account')}:{str(sender_id or 'unknown')}"
+
+    def normalize_contact(self, item: dict) -> dict:
+        return {
+            "sender_id": str(item.get("sender_id") or ""),
+            "account_id": str(item.get("account_id") or ""),
+            "remark_name": str(item.get("remark_name") or ""),
+            "display_name": str(item.get("display_name") or item.get("nickname") or ""),
+            "avatar_url": str(item.get("avatar_url") or ""),
+            "auto_avatar_url": str(item.get("auto_avatar_url") or ""),
+            "updated_at": str(item.get("updated_at") or now_text()),
+        }
+
+    def integration_contacts(self, integration_id: str) -> list[dict]:
+        data = self.load_config()
+        prefix = f"{safe_id(integration_id)}:"
+        items = []
+        for key, item in (data.get("contacts") or {}).items():
+            if str(key).startswith(prefix):
+                items.append({"key": key, **self.normalize_contact(item)})
+        items.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+        return items
+
+    def get_contact(self, integration_id: str, sender_id: str, account_id: str = "") -> dict:
+        data = self.load_config()
+        key = self.contact_key(integration_id, sender_id, account_id)
+        return self.normalize_contact((data.get("contacts") or {}).get(key, {"sender_id": sender_id, "account_id": account_id}))
+
+    def update_contact(self, integration_id: str, sender_id: str, payload: dict, account_id: str = "") -> dict:
+        data = self.load_config()
+        key = self.contact_key(integration_id, sender_id, account_id or str(payload.get("account_id") or ""))
+        current = self.normalize_contact((data.get("contacts") or {}).get(key, {"sender_id": sender_id, "account_id": account_id}))
+        updated = self.normalize_contact({**current, **payload, "sender_id": sender_id, "updated_at": now_text()})
+        data.setdefault("contacts", {})[key] = updated
+        self.save_config(data)
+        return {"key": key, **updated}
+
+    def touch_contact_from_message(self, integration_id: str, sender_id: str, metadata: dict, account_id: str = "") -> dict:
+        data = self.load_config()
+        key = self.contact_key(integration_id, sender_id, account_id)
+        current = self.normalize_contact((data.get("contacts") or {}).get(key, {"sender_id": sender_id, "account_id": account_id}))
+        display_name = str(
+            metadata.get("display_name")
+            or metadata.get("nickname")
+            or metadata.get("nick_name")
+            or current.get("display_name")
+            or ""
+        )
+        auto_avatar_url = str(
+            metadata.get("avatar_url")
+            or metadata.get("head_img_url")
+            or metadata.get("portrait")
+            or current.get("auto_avatar_url")
+            or ""
+        )
+        updated = self.normalize_contact(
+            {
+                **current,
+                "sender_id": sender_id,
+                "account_id": account_id or current.get("account_id") or "",
+                "display_name": display_name,
+                "auto_avatar_url": auto_avatar_url,
+                "updated_at": now_text(),
+            }
+        )
+        data.setdefault("contacts", {})[key] = updated
+        self.save_config(data)
+        return {"key": key, **updated}
+
+    def record_message_timing(self, integration_id: str, timing: dict) -> None:
+        runtime = self.runtime.setdefault(safe_id(integration_id), {})
+        items = list(runtime.get("recent_timings") or [])
+        items.insert(0, timing)
+        runtime["recent_timings"] = items[:10]
+
+    def update_message_timing(self, integration_id: str, trace_id: str, patch: dict) -> dict:
+        if not trace_id:
+            raise ValueError("trace_id is required")
+        runtime = self.runtime.setdefault(safe_id(integration_id), {})
+        items = list(runtime.get("recent_timings") or [])
+        allowed = {
+            "receive_ms",
+            "tool_ms",
+            "llm_ms",
+            "tts_ms",
+            "send_ms",
+            "total_ms",
+            "dialog_ms",
+            "bridge_ms",
+            "send_status",
+            "send_error",
+        }
+        sanitized = {
+            key: value
+            for key, value in (patch or {}).items()
+            if key in allowed and isinstance(value, (str, int, float, bool))
+        }
+        sanitized["updated_at"] = now_text()
+        for item in items:
+            if str(item.get("trace_id") or "") == str(trace_id):
+                item.update(sanitized)
+                runtime["recent_timings"] = items[:10]
+                return item
+        timing = {"trace_id": trace_id, "created_at": now_text(), **sanitized}
+        items.insert(0, timing)
+        runtime["recent_timings"] = items[:10]
+        return timing
 
     def mark_status(self, integration_id: str, status: str, error: str = "") -> None:
         integration = self.get_integration(integration_id)
@@ -762,12 +881,14 @@ class ExternalDialogEngine:
         conversation_store: ConversationStore,
         memory_store: MemoryStore,
         tool_manager: ToolManager,
+        bot_profiles: BotProfileStore,
         media_dir: Path,
     ):
         self.integration_manager = integration_manager
         self.conversation_store = conversation_store
         self.memory_store = memory_store
         self.tool_manager = tool_manager
+        self.bot_profiles = bot_profiles
         self.media_dir = media_dir
         self.media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -781,37 +902,78 @@ class ExternalDialogEngine:
 
         integration = self.integration_manager.get_integration(platform_id) or self.integration_manager.get_integration("weixin_personal")
         keywords = (integration or {}).get("voice_trigger_keywords") or DEFAULT_VOICE_TRIGGERS
+        bot_profile = self.bot_profiles.get((integration or {}).get("bot_profile_id") or "default")
+        runtime_settings = self.settings_for_profile(settings, bot_profile)
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        account_id = str(metadata.get("account_id") or "")
+        contact = self.integration_manager.touch_contact_from_message(platform_id, sender_id, metadata, account_id)
         conversation_id = self.integration_manager.session_conversation_id(platform_id, session_id, sender_id, self.conversation_store)
         conversation = self.conversation_store.load(conversation_id) or self.conversation_store.create(f"{platform_id} / {sender_id}")
 
         trace_id = f"ext_{uuid.uuid4().hex[:10]}"
+        started_at = time.perf_counter()
+        timings = {"receive_ms": 0, "tool_ms": 0, "llm_ms": 0, "tts_ms": 0, "send_ms": 0, "total_ms": 0}
         self.integration_manager.append_log(platform_id, f"[dialog:{trace_id}] recv sender={sender_id} text={compact_text(text, 220)}")
-        reply_text = await self.reply_text(settings, conversation, text)
+        reply_text, tool_result, direct_answer, tool_ms, llm_ms = await self.reply_text(runtime_settings, conversation, text)
+        timings["tool_ms"] = tool_ms
+        timings["llm_ms"] = llm_ms
         self.conversation_store.append_messages(
             conversation["id"],
             [
-                {"role": "user", "content": text, "source": platform_id},
-                {"role": "assistant", "content": reply_text, "source": platform_id},
+                {
+                    "role": "user",
+                    "content": text,
+                    "source": platform_id,
+                    "platform_id": platform_id,
+                    "sender_id": sender_id,
+                    "display_name": contact.get("remark_name") or contact.get("display_name") or sender_id,
+                    "avatar_url": contact.get("avatar_url") or contact.get("auto_avatar_url") or "",
+                },
+                {
+                    "role": "assistant",
+                    "content": reply_text,
+                    "source": platform_id,
+                    "platform_id": platform_id,
+                    "display_name": bot_profile.get("name") or "枝语",
+                    "avatar_url": bot_profile.get("avatar_url") or "",
+                    "bot_profile_id": bot_profile.get("id") or "default",
+                },
             ],
             title_hint=text,
         )
-        await self.remember_turn(settings, text, reply_text)
+        await self.remember_turn(runtime_settings, text, reply_text)
 
         send_voice = self.should_send_voice(text, keywords, integration)
         voice_file = ""
         voice_error = ""
         if send_voice:
             try:
-                voice_file = await self.synthesize_voice(settings, reply_text, trace_id)
+                tts_start = time.perf_counter()
+                voice_file = await self.synthesize_voice(runtime_settings, reply_text, trace_id)
+                timings["tts_ms"] = int((time.perf_counter() - tts_start) * 1000)
             except Exception as exc:
                 send_voice = False
                 voice_error = str(exc)
                 self.integration_manager.append_log(platform_id, f"[dialog:{trace_id}] tts failed: {exc}")
 
+        timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
         self.integration_manager.runtime.setdefault(platform_id, {})["last_message_at"] = now_text()
+        self.integration_manager.record_message_timing(
+            platform_id,
+            {
+                "trace_id": trace_id,
+                "sender_id": sender_id,
+                "text": compact_text(text, 80),
+                "reply_len": len(reply_text),
+                "tool": (tool_result or {}).get("tool") or "",
+                "direct_answer": bool(direct_answer),
+                "created_at": now_text(),
+                **timings,
+            },
+        )
         self.integration_manager.append_log(
             platform_id,
-            f"[dialog:{trace_id}] reply text_len={len(reply_text)} send_voice={send_voice} voice_file={voice_file}",
+            f"[dialog:{trace_id}] reply text_len={len(reply_text)} tool={(tool_result or {}).get('tool') or '-'} direct={bool(direct_answer)} timings={timings} send_voice={send_voice} voice_file={voice_file}",
         )
         return {
             "ok": True,
@@ -824,23 +986,41 @@ class ExternalDialogEngine:
             "send_voice": send_voice,
             "voice_file": voice_file,
             "voice_error": voice_error,
+            "tool_used": (tool_result or {}).get("tool") or "",
+            "direct_answer": bool(direct_answer),
+            "timings": timings,
         }
 
-    async def reply_text(self, settings: SessionSettings, conversation: dict, user_text: str) -> str:
+    def settings_for_profile(self, settings: SessionSettings, profile: dict) -> SessionSettings:
+        snapshot = SessionSettings(**asdict(settings))
+        if profile.get("system"):
+            snapshot.system = str(profile["system"])
+        if profile.get("tools_enabled") is False:
+            snapshot.tools_enabled = False
+        return snapshot
+
+    async def reply_text(self, settings: SessionSettings, conversation: dict, user_text: str) -> tuple[str, dict | None, str, int, int]:
         repeat_text = extract_repeat_text(user_text)
         if repeat_text:
-            return clean_for_tts(repeat_text) or repeat_text
+            return clean_for_tts(repeat_text) or repeat_text, None, "", 0, 0
 
         request_text = self.build_request_text(user_text, conversation)
+        tool_started = time.perf_counter()
         tool_result = await self.maybe_execute_tool(settings, user_text)
+        tool_ms = int((time.perf_counter() - tool_started) * 1000) if tool_result else 0
+        direct_answer = direct_answer_from_tool(tool_result)
+        if direct_answer:
+            return clean_for_tts(direct_answer) or direct_answer, tool_result, direct_answer, tool_ms, 0
         if tool_result:
             request_text += (
                 "\n\n联网/API 工具结果如下。请基于结果回答用户；如果结果不足或失败，要自然说明不确定，不要编造：\n"
                 + json.dumps(tool_result, ensure_ascii=False)
             )
         messages = self.build_messages(settings, conversation, user_text, request_text)
+        llm_started = time.perf_counter()
         answer = await self.complete_llm_text(settings, messages, temperature=settings.temperature, max_tokens=settings.max_tokens)
-        return clean_for_tts(answer) or answer.strip()
+        llm_ms = int((time.perf_counter() - llm_started) * 1000)
+        return clean_for_tts(answer) or answer.strip(), tool_result, "", tool_ms, llm_ms
 
     def build_messages(self, settings: SessionSettings, conversation: dict, user_text: str, request_text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": settings.system}]

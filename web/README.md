@@ -185,6 +185,16 @@ npm install -g @tencent-weixin/openclaw-weixin-cli
 openclaw --version
 ```
 
+如果 `node/npm/openclaw` 在终端里可用，但接入页仍显示未检测到，通常是启动 Web 控制台的 shell 没有继承 Node 的 PATH。请在启动枝语前先确认：
+
+```bash
+export PATH=/root/autodl-tmp/tools/node/bin:$PATH
+node -v
+npm -v
+npx --version
+openclaw --version
+```
+
 进入页面：
 
 ```text

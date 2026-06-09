@@ -46,6 +46,70 @@ export async function saveConfig(configData) {
   });
 }
 
+export async function loadToolConfig() {
+  const data = await fetchJson("/api/config/tools");
+  state.toolConfig = data.tools || {};
+  return state.toolConfig;
+}
+
+export async function saveToolConfig(tools) {
+  const data = await fetchJson("/api/config/tools", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tools),
+  });
+  state.toolConfig = data.tools || {};
+  return state.toolConfig;
+}
+
+export async function loadBotProfiles() {
+  const data = await fetchJson("/api/bot-profiles");
+  state.botProfiles = data.profiles || [];
+  return state.botProfiles;
+}
+
+export async function createBotProfile(profile) {
+  const data = await fetchJson("/api/bot-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  state.botProfiles = data.profiles || state.botProfiles;
+  return data.profile;
+}
+
+export async function updateBotProfile(id, profile) {
+  const data = await fetchJson(`/api/bot-profiles/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  state.botProfiles = data.profiles || state.botProfiles;
+  return data.profile;
+}
+
+export async function deleteBotProfile(id) {
+  const data = await fetchJson(`/api/bot-profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.botProfiles = data.profiles || state.botProfiles;
+  return data.ok;
+}
+
+export async function uploadAvatar(dataUrl) {
+  return fetchJson("/api/assets/avatar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data_url: dataUrl }),
+  });
+}
+
+export async function resolveTool(text) {
+  return fetchJson("/api/tools/resolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
 /* ---- services ---- */
 
 export async function loadServices() {
@@ -194,6 +258,14 @@ export async function fetchIntegrationLogs(id) {
   return data.logs || "";
 }
 
+export async function updateIntegrationContact(integrationId, senderId, data) {
+  return fetchJson(`/api/integrations/${encodeURIComponent(integrationId)}/contacts/${encodeURIComponent(senderId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function testIntegrationDialog(id, text) {
   return fetchJson("/api/integrations/dialog", {
     method: "POST",
@@ -252,4 +324,28 @@ export async function addMemory(value) {
 
 export async function deleteMemory(id) {
   return fetchJson(`/api/memory/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/* ---- reminders ---- */
+
+export async function loadReminders() {
+  const data = await fetchJson("/api/reminders");
+  state.reminders = data.reminders || [];
+  return state.reminders;
+}
+
+export async function createReminder(data) {
+  const result = await fetchJson("/api/reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  state.reminders = result.reminders || state.reminders;
+  return result.reminder;
+}
+
+export async function deleteReminder(id) {
+  const result = await fetchJson(`/api/reminders/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.reminders = result.reminders || state.reminders;
+  return result.ok;
 }

@@ -17,6 +17,7 @@ from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketD
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from assets import AvatarStore
 from audio_pipeline import (
     clean_for_tts,
     extract_chat_message_text,
@@ -36,10 +37,14 @@ from config import (
     update_llm_api_key,
 )
 from conversations import ConversationStore
+from direct_answers import direct_answer_from_tool
 from integrations import ExternalDialogEngine, IntegrationManager
+from profiles import BotProfileStore
+from reminders import ReminderStore
 from runtime_brain import MemoryStore, ToolManager, parse_tool_call
 from services import ServiceManager, check_service, health_url_from
 from system_resources import collect_system_resources
+from tool_config import ToolProviderConfig
 from vad import MIC_SAMPLE_RATE, VadModelStore, VoiceVadSession
 
 
@@ -60,6 +65,11 @@ MEMORY_DB = RUNTIME_DIR / "memory.sqlite3"
 TOOLS_CONFIG = RUNTIME_DIR / "tools.json"
 INTEGRATIONS_CONFIG = RUNTIME_DIR / "integrations.json"
 INTEGRATION_MEDIA_DIR = RUNTIME_DIR / "integration_media"
+TOOL_PROVIDERS_CONFIG = RUNTIME_DIR / "tool_providers.json"
+BOT_PROFILES_CONFIG = RUNTIME_DIR / "bot_profiles.json"
+REMINDERS_DB = RUNTIME_DIR / "reminders.sqlite3"
+UPLOAD_DIR = RUNTIME_DIR / "uploads"
+AVATAR_DIR = UPLOAD_DIR / "avatars"
 
 END = object()
 GLOBAL_TTS_LOCK = asyncio.Lock()
@@ -273,6 +283,28 @@ async def warmup_llm(settings: SessionSettings) -> None:
     resp.raise_for_status()
 
 
+async def reminder_loop(app: FastAPI) -> None:
+    while True:
+        try:
+            for reminder in app.state.reminder_store.due():
+                content = f"提醒：{reminder.get('content') or reminder.get('title')}"
+                try:
+                    conversation = app.state.conversation_store.create(reminder.get("title") or "提醒")
+                    app.state.conversation_store.append_messages(
+                        conversation["id"],
+                        [{"role": "assistant", "content": content, "source": "reminder", "display_name": "枝语"}],
+                    )
+                    app.state.reminder_store.mark_fired(reminder["id"], "done")
+                except Exception as exc:
+                    app.state.reminder_store.mark_fired(reminder["id"], "failed", str(exc))
+            await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[reminder] loop error: {exc}", flush=True)
+            await asyncio.sleep(15)
+
+
 def create_app(args) -> FastAPI:
     # The web server is a single orchestration endpoint. The ASR/LLM/TTS models
     # still live in their own services so they can be restarted and tuned
@@ -285,19 +317,23 @@ def create_app(args) -> FastAPI:
     app.state.service_manager = ServiceManager(service_config_path, LOG_DIR)
     app.state.conversation_store = ConversationStore(CONVERSATION_DIR)
     app.state.memory_store = MemoryStore(MEMORY_DB)
-    app.state.tool_manager = ToolManager(TOOLS_CONFIG)
-    app.state.tool_manager.update_config(
-        {"builtins": {tool["id"]: {"enabled": True} for tool in ToolManager.BUILTIN_TOOLS}}
-    )
+    app.state.tool_providers = ToolProviderConfig(TOOL_PROVIDERS_CONFIG)
+    app.state.tool_manager = ToolManager(TOOLS_CONFIG, app.state.tool_providers)
+    app.state.bot_profiles = BotProfileStore(BOT_PROFILES_CONFIG, app.state.settings.system)
+    app.state.avatar_store = AvatarStore(AVATAR_DIR)
+    app.state.reminder_store = ReminderStore(REMINDERS_DB)
     app.state.integration_manager = IntegrationManager(INTEGRATIONS_CONFIG, LOG_DIR, INTEGRATION_MEDIA_DIR)
     app.state.external_dialog_engine = ExternalDialogEngine(
         app.state.integration_manager,
         app.state.conversation_store,
         app.state.memory_store,
         app.state.tool_manager,
+        app.state.bot_profiles,
         INTEGRATION_MEDIA_DIR,
     )
+    app.state.reminder_task = None
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/runtime/uploads", StaticFiles(directory=UPLOAD_DIR), name="runtime_uploads")
 
     @app.middleware("http")
     async def no_cache_static(request: Request, call_next):
@@ -306,6 +342,18 @@ def create_app(args) -> FastAPI:
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
         return response
+
+    @app.on_event("startup")
+    async def start_reminder_loop():
+        app.state.reminder_task = asyncio.create_task(reminder_loop(app))
+
+    @app.on_event("shutdown")
+    async def stop_reminder_loop():
+        task = app.state.reminder_task
+        if task and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     @app.get("/")
     async def index():
@@ -322,6 +370,80 @@ def create_app(args) -> FastAPI:
         app.state.settings.update_from_dict(payload)
         save_persisted_settings(app.state.settings, SETTINGS_CONFIG)
         return public_settings(app.state.settings)
+
+    @app.get("/api/config/tools")
+    async def tool_provider_config(request: Request):
+        require_local_service_control(request)
+        return {"tools": app.state.tool_providers.public()}
+
+    @app.patch("/api/config/tools")
+    async def update_tool_provider_config(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        return {"tools": app.state.tool_providers.update(payload or {})}
+
+    @app.get("/api/bot-profiles")
+    async def bot_profiles(request: Request):
+        require_local_service_control(request)
+        return app.state.bot_profiles.list_profiles()
+
+    @app.post("/api/bot-profiles")
+    async def create_bot_profile(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            profile = app.state.bot_profiles.create(payload or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"profile": profile, **app.state.bot_profiles.list_profiles()}
+
+    @app.patch("/api/bot-profiles/{profile_id}")
+    async def update_bot_profile(profile_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            profile = app.state.bot_profiles.update(profile_id, payload or {})
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Profile not found") from exc
+        return {"profile": profile, **app.state.bot_profiles.list_profiles()}
+
+    @app.delete("/api/bot-profiles/{profile_id}")
+    async def delete_bot_profile(profile_id: str, request: Request):
+        require_local_service_control(request)
+        return {"ok": app.state.bot_profiles.delete(profile_id), **app.state.bot_profiles.list_profiles()}
+
+    @app.post("/api/assets/avatar")
+    async def upload_avatar(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            return {"asset": app.state.avatar_store.save_data_url(str((payload or {}).get("data_url") or ""))}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/reminders")
+    async def reminders(request: Request, status: str = ""):
+        require_local_service_control(request)
+        return {"reminders": app.state.reminder_store.list(status=status)}
+
+    @app.post("/api/reminders")
+    async def create_reminder(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            reminder = app.state.reminder_store.create(payload or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"reminder": reminder, "reminders": app.state.reminder_store.list()}
+
+    @app.patch("/api/reminders/{reminder_id}")
+    async def update_reminder(reminder_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            reminder = app.state.reminder_store.update(reminder_id, payload or {})
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Reminder not found") from exc
+        return {"reminder": reminder, "reminders": app.state.reminder_store.list()}
+
+    @app.delete("/api/reminders/{reminder_id}")
+    async def delete_reminder(reminder_id: str, request: Request):
+        require_local_service_control(request)
+        return {"ok": app.state.reminder_store.delete(reminder_id), "reminders": app.state.reminder_store.list()}
 
     @app.get("/api/memory")
     async def memory_items(limit: int = 200, query: str = "", layer: str = ""):
@@ -368,6 +490,21 @@ def create_app(args) -> FastAPI:
             max_chars=app.state.settings.tools_max_result_chars,
         )
         return {"id": tool_id, "result": result}
+
+    @app.post("/api/tools/resolve")
+    async def resolve_tool(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        text = str((payload or {}).get("text") or "")
+        call = app.state.tool_manager.suggest_from_text(text)
+        result = None
+        if call:
+            result = await app.state.tool_manager.execute(
+                str(call.get("id") or ""),
+                call.get("arguments") if isinstance(call.get("arguments"), dict) else {},
+                timeout=app.state.settings.tools_timeout,
+                max_chars=app.state.settings.tools_max_result_chars,
+            )
+        return {"tool_call": call, "result": result, "direct_answer": direct_answer_from_tool({"tool": call.get("id"), "result": result} if call else None)}
 
     @app.get("/api/health")
     async def health():
@@ -562,6 +699,31 @@ def create_app(args) -> FastAPI:
     async def integration_logs(integration_id: str, request: Request, max_bytes: int = 36000):
         require_local_service_control(request)
         return {"id": integration_id, "logs": app.state.integration_manager.read_logs(integration_id, max_bytes=max_bytes)}
+
+    @app.get("/api/integrations/{integration_id}/contacts")
+    async def integration_contacts(integration_id: str, request: Request):
+        require_local_service_control(request)
+        return {"contacts": app.state.integration_manager.integration_contacts(integration_id)}
+
+    @app.patch("/api/integrations/{integration_id}/contacts/{sender_id:path}")
+    async def update_integration_contact(integration_id: str, sender_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        contact = app.state.integration_manager.update_contact(
+            integration_id,
+            sender_id,
+            payload or {},
+            account_id=str((payload or {}).get("account_id") or ""),
+        )
+        return {"contact": contact, "contacts": app.state.integration_manager.integration_contacts(integration_id)}
+
+    @app.post("/api/integrations/{integration_id}/timings/{trace_id}")
+    async def update_integration_timing(integration_id: str, trace_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            timing = app.state.integration_manager.update_message_timing(integration_id, trace_id, payload or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"timing": timing}
 
     @app.post("/api/integrations/dialog")
     async def integration_dialog(request: Request, payload: dict | None = Body(default=None)):
@@ -865,6 +1027,20 @@ class DialogSession:
             request_user_text = build_request_user_text(user_text, last_assistant_content(self.messages))
             tool_result = await self.maybe_execute_tool(user_text)
             if tool_result:
+                direct_answer = direct_answer_from_tool(tool_result)
+                if direct_answer:
+                    self.trace_log(trace_id, f"tool:direct {tool_result.get('tool')}")
+                    await self.send_event("assistant_start")
+                    await self.send_event("tool", id=tool_result.get("tool"), arguments=tool_result.get("arguments") or {})
+                    await self.send_event("llm_delta", text=direct_answer)
+                    await self.stream_direct_tts(direct_answer)
+                    self.messages.append({"role": "user", "content": user_text})
+                    self.messages.append({"role": "assistant", "content": direct_answer})
+                    self.persist_messages([{"role": "assistant", "content": direct_answer}])
+                    await self.send_event("conversation_saved", conversation=self.conversation)
+                    await self.remember_turn_safely(user_text, direct_answer)
+                    self.trim_history()
+                    return
                 request_user_text += (
                     "\n\n联网/API 工具结果如下。请基于结果回答用户；如果结果不足或失败，要自然说明不确定，不要编造：\n"
                     + json.dumps(tool_result, ensure_ascii=False)
@@ -984,13 +1160,13 @@ class DialogSession:
         tool_signal = bool(
             heuristic_call
             or custom_enabled
-            or re.search(r"(当前|现在|最新|实时|热点|新闻|搜索|查一下|网上|天气|价格|汇率|网址|https?://)", user_text, flags=re.I)
+            or re.search(r"(当前|现在|几点|几号|星期|最新|实时|热点|新闻|搜索|查一下|网上|天气|价格|汇率|网址|https?://)", user_text, flags=re.I)
         )
         if not tool_signal:
             return None
 
         call = heuristic_call
-        if self.settings.tools_auto_call:
+        if self.settings.tools_auto_call and not heuristic_call:
             planned = await self.plan_tool_call(user_text)
             if planned:
                 call = planned

@@ -165,6 +165,10 @@
   color: var(--text-muted);
   background: var(--surface-muted);
 }
+.integration-empty.compact {
+  min-height: 64px;
+  padding: 12px;
+}
 
 .integration-qr {
   min-height: 74px;
@@ -215,6 +219,90 @@
 .integration-account-list {
   display: grid;
   gap: 6px;
+}
+
+.integration-timing-list,
+.integration-contact-list {
+  display: grid;
+  gap: 7px;
+}
+
+.integration-timing-item,
+.integration-contact-item {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.integration-timing-item strong,
+.integration-contact-item strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.integration-timing-item span,
+.integration-timing-item small,
+.integration-contact-item small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.integration-contact-item {
+  grid-template-columns: 34px minmax(120px, 0.65fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.integration-contact-avatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  font-size: var(--font-xs);
+  font-weight: 800;
+}
+.integration-contact-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.integration-contact-body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.integration-contact-edit {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.integration-contact-edit input[type="text"],
+.integration-contact-edit input[type="file"] {
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  font-size: var(--font-xs);
+}
+.compact-action {
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .integration-account-item {
@@ -300,4 +388,7 @@
   .integration-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .integration-test-row { grid-template-columns: 1fr; }
   .integration-qr { align-items: flex-start; flex-direction: column; }
+  .integration-contact-item,
+  .integration-contact-edit { grid-template-columns: 1fr; }
+  .integration-contact-avatar { display: none; }
 }

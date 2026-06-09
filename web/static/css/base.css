@@ -44,10 +44,13 @@
   --shadow-lg: 0 22px 56px rgba(0,0,0,0.40);
   --topbar-h: 50px;
   --ui-font-scale: 1;
-  --font-body: calc(15px * var(--ui-font-scale));
-  --font-sm: calc(14px * var(--ui-font-scale));
-  --font-xs: calc(12px * var(--ui-font-scale));
-  --font-label: calc(13px * var(--ui-font-scale));
+  --font-ui: "MiSans", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-chat: "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Fira Code", Consolas, "Microsoft YaHei UI", monospace;
+  --font-body: calc(16px * var(--ui-font-scale));
+  --font-sm: calc(14.5px * var(--ui-font-scale));
+  --font-xs: calc(12.5px * var(--ui-font-scale));
+  --font-label: calc(13.5px * var(--ui-font-scale));
 }
 
 /* ---- light theme (higher specificity to override :root) ---- */
@@ -91,7 +94,7 @@ html, body { min-height: 100%; }
 body {
   margin: 0;
   color: var(--text);
-  font-family: "Noto Sans SC", "Inter", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background:
@@ -99,7 +102,7 @@ body {
     linear-gradient(90deg, rgba(89, 195, 195, 0.05), transparent 42%, rgba(217, 137, 166, 0.04)),
     var(--bg);
   font-size: var(--font-body);
-  line-height: 1.55;
+  line-height: 1.6;
   transition: background 200ms ease, color 200ms ease;
 }
 
@@ -118,7 +121,7 @@ h2 { font-size: calc(18px * var(--ui-font-scale)); font-weight: 600; letter-spac
 h3 { font-size: calc(16px * var(--ui-font-scale)); font-weight: 600; }
 
 code, pre, .log-viewer, .prompt-textarea {
-  font-family: "JetBrains Mono", "Fira Code", Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--font-mono);
 }
 
 /* brand */
