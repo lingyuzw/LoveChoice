@@ -60,15 +60,16 @@
 
 .settings-overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
 }
 
 .settings-overview-card {
-  min-height: 172px;
+  min-height: 138px;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 9px;
+  gap: 7px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -109,7 +110,19 @@
 }
 .settings-overview-card .secondary-action {
   justify-self: start;
-  min-height: 34px;
+  min-height: 32px;
+}
+
+@media (max-width: 980px) {
+  .settings-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .settings-overview-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-section-detached {

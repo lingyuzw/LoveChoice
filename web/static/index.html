@@ -34,14 +34,17 @@
       <main class="page-view" id="page-dashboard">
         <div class="voice-console">
           <aside class="sidebar">
-            <button class="primary-action full" id="newConversationBtn" type="button"><i data-lucide="plus"></i> 新建对话</button>
-            <div class="conversation-tools">
-              <input id="conversationSearchInput" type="search" placeholder="搜索对话" autocomplete="off" />
-              <button class="icon-button" id="archiveModeBtn" type="button" title="查看归档"><i data-lucide="archive"></i></button>
-            </div>
-            <div class="conversation-tabs" id="conversationTabs">
-              <button class="active" type="button" data-conversation-scope="recent"><i data-lucide="clock-3"></i>最近</button>
-              <button type="button" data-conversation-scope="weixin"><i data-lucide="message-circle"></i>微信聊天</button>
+            <div class="conversation-top">
+              <button class="conversation-action-row" id="newConversationBtn" type="button"><i data-lucide="square-pen"></i><span>新建对话</span></button>
+              <label class="conversation-search-row">
+                <i data-lucide="search"></i>
+                <input id="conversationSearchInput" type="search" placeholder="搜索对话" autocomplete="off" />
+              </label>
+              <div class="conversation-tabs" id="conversationTabs">
+                <button class="active" type="button" data-conversation-scope="recent"><i data-lucide="clock-3"></i>最近</button>
+                <button type="button" data-conversation-scope="weixin"><i data-lucide="message-circle"></i>微信聊天</button>
+              </div>
+              <button class="conversation-action-row subtle" id="archiveModeBtn" type="button"><i data-lucide="archive"></i><span>归档</span></button>
             </div>
             <div class="conversation-rail">
               <div class="rail-head">
@@ -110,25 +113,44 @@
               <button class="secondary-action" id="memoryRefreshPageBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
             </div>
           </section>
-          <section class="memory-stats-grid" id="memoryStatsGrid"></section>
-          <section class="memory-page-panel">
-            <div class="memory-toolbar">
-              <input id="memorySearchInput" type="search" placeholder="搜索记忆" autocomplete="off" />
-              <select id="memoryLayerFilter">
-                <option value="">全部层级</option>
-                <option value="short">短期</option>
-                <option value="mid">中期</option>
-                <option value="long">长期</option>
-              </select>
-              <input id="memoryAddPageInput" type="text" placeholder="手动添加一条记忆..." autocomplete="off" />
-              <button class="primary-action" id="memoryAddPageBtn" type="button"><i data-lucide="plus"></i>添加</button>
-            </div>
-            <div class="memory-page-list" id="memoryPageList"></div>
-            <div class="memory-pagination">
-              <button class="secondary-action" id="memoryPrevPageBtn" type="button"><i data-lucide="chevron-left"></i>上一页</button>
-              <span id="memoryPageInfo">第 1 页</span>
-              <button class="secondary-action" id="memoryNextPageBtn" type="button">下一页<i data-lucide="chevron-right"></i></button>
-            </div>
+          <section class="memory-workbench">
+            <aside class="memory-side-panel">
+              <div class="memory-side-head">
+                <p class="eyebrow">Overview</p>
+                <h2>记忆概览</h2>
+              </div>
+              <div class="memory-stats-grid" id="memoryStatsGrid"></div>
+              <div class="memory-filter-stack">
+                <label><span>层级筛选</span>
+                  <select id="memoryLayerFilter">
+                    <option value="">全部层级</option>
+                    <option value="short">短期</option>
+                    <option value="mid">中期</option>
+                    <option value="long">长期</option>
+                  </select>
+                </label>
+              </div>
+            </aside>
+            <section class="memory-page-panel">
+              <div class="memory-toolbar">
+                <label class="memory-search-box">
+                  <i data-lucide="search"></i>
+                  <input id="memorySearchInput" type="search" placeholder="搜索记忆内容、关键词" autocomplete="off" />
+                </label>
+                <div class="memory-add-box">
+                  <input id="memoryAddPageInput" type="text" placeholder="手动添加一条重要记忆..." autocomplete="off" />
+                  <button class="primary-action" id="memoryAddPageBtn" type="button"><i data-lucide="plus"></i>添加</button>
+                </div>
+              </div>
+              <div class="memory-list-shell">
+                <div class="memory-page-list" id="memoryPageList"></div>
+              </div>
+              <div class="memory-pagination">
+                <button class="secondary-action" id="memoryPrevPageBtn" type="button"><i data-lucide="chevron-left"></i>上一页</button>
+                <span id="memoryPageInfo">第 1 页</span>
+                <button class="secondary-action" id="memoryNextPageBtn" type="button">下一页<i data-lucide="chevron-right"></i></button>
+              </div>
+            </section>
           </section>
         </div>
       </main>
@@ -241,9 +263,6 @@
           </aside>
           <section class="settings-content">
             <section class="settings-overview-grid" id="settingsOverviewGrid">
-              <article class="settings-overview-card" data-open-config="appearance"><span><i data-lucide="palette"></i>外观</span><strong id="appearanceSummary">主题与对话头像</strong><small>字体、主题、双方资料</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="engine"><span><i data-lucide="cpu"></i>模型引擎</span><strong id="engineSummary">本地模型</strong><small>ASR / LLM 基础参数</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="tools"><span><i data-lucide="globe-2"></i>联网工具</span><strong id="toolsSummary">工具中心</strong><small>天气、搜索、地图、新闻</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="proactive"><span><i data-lucide="sparkles"></i>主动性</span><strong id="proactiveSummary">默认关闭</strong><small>早安、提醒、主动追问</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="botProfiles"><span><i data-lucide="bot"></i>Bot 人格</span><strong id="botProfileSummary">默认人格</strong><small>工具开关、风格、System Prompt</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="prompt"><span><i data-lucide="message-square-text"></i>Prompt</span><strong id="promptSummary">系统提示词</strong><small>主对话人格设定</small><button class="secondary-action" type="button">配置</button></article>

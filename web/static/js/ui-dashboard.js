@@ -59,6 +59,12 @@ export async function initDashboard() {
   syncChatView();
 }
 
+export async function enterDashboard() {
+  await Promise.allSettled([loadConfig(), loadConversations()]);
+  renderConversationList();
+  syncChatView();
+}
+
 function setupDashboardEvents() {
   if (eventsBound) {
     updateTtsToggleIcon();

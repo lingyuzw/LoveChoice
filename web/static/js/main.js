@@ -67,6 +67,7 @@ async function switchPage(page, pushState = true) {
     view.style.animation = "none";
     view.offsetHeight; // trigger reflow
     view.style.animation = "";
+    window.scrollTo(0, 0);
   }
 
   // nav active
@@ -84,10 +85,12 @@ async function switchPage(page, pushState = true) {
   // dashboard and services are heavy (websocket, polling) so only init once
   try {
     if (page === "dashboard") {
+      const dashboardModule = await import("./ui-dashboard.js");
       if (!dashboardInitialized) {
-        const { initDashboard } = await import("./ui-dashboard.js");
-        await initDashboard();
+        await dashboardModule.initDashboard();
         dashboardInitialized = true;
+      } else {
+        await dashboardModule.enterDashboard?.();
       }
     } else if (page === "services") {
       const servicesModule = await import("./ui-services.js");

@@ -33,9 +33,9 @@
 
 .sidebar {
   min-height: 0; display: grid;
-  grid-template-rows: auto 1fr auto auto auto;
-  gap: 8px; overflow: hidden;
-  padding: 10px 12px; border-right: 1px solid var(--border);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 10px; overflow: hidden;
+  padding: 11px 10px 10px; border-right: 1px solid var(--border);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--primary) 8%), var(--surface) 210px),
     var(--surface);
@@ -45,6 +45,7 @@
 .conversation-rail {
   min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr);
   gap: 4px; overflow: hidden;
+  padding-top: 2px;
 }
 
 /* pipeline compact (sidebar) */
@@ -108,9 +109,9 @@
 .settings-nav a:hover { background: var(--surface-muted); color: var(--text-soft); }
 .settings-nav a.nav-active { color: var(--primary); background: var(--primary-soft); }
 .settings-nav svg { width: 14px; height: 14px; }
-.settings-content { display: grid; gap: 10px; }
+.settings-content { display: grid; gap: 12px; }
 .settings-panel {
-  display: grid; gap: 10px; padding: 14px; scroll-margin-top: 78px;
+  display: grid; gap: 12px; padding: 15px; scroll-margin-top: 78px;
   border: 1px solid var(--border); border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 96%, var(--info) 4%);
   transition: background 200ms, border-color 200ms, box-shadow 200ms;
@@ -118,6 +119,19 @@
 .settings-panel--prominent {
   border-color: rgba(212, 168, 83, 0.15);
   box-shadow: 0 0 0 1px var(--primary-glow);
+}
+
+#appearance,
+#engine,
+#tools {
+  scroll-margin-top: 78px;
+}
+
+#engine,
+#tools {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--info) 4%), transparent 120px),
+    var(--surface);
 }
 
 /* page transition */

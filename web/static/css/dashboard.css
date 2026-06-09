@@ -3,28 +3,65 @@
    BranchWhisper · Precision Console
    ============================================================ */
 
+/* conversation navigation */
+.conversation-top {
+  display: grid;
+  gap: 5px;
+}
+.conversation-action-row,
+.conversation-search-row {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.conversation-action-row {
+  font-weight: 650;
+}
+.conversation-action-row:hover,
+.conversation-search-row:focus-within {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+}
+.conversation-action-row.subtle {
+  color: var(--text-muted);
+}
+.conversation-action-row svg,
+.conversation-search-row svg {
+  width: 16px;
+  height: 16px;
+}
+.conversation-search-row {
+  cursor: text;
+}
+.conversation-search-row input {
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  color: var(--text);
+  background: transparent;
+}
+.conversation-search-row input:focus {
+  box-shadow: none;
+}
+
 /* conversation list */
 .conversation-list {
   min-height: 0; display: grid; align-content: start; gap: 3px;
   overflow-y: auto; padding-right: 2px;
+  overscroll-behavior: contain;
 }
 .rail-label { margin-bottom: 2px; }
-
-.conversation-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px;
-  gap: 6px;
-}
-
-.conversation-tools input {
-  min-width: 0;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text);
-  background: var(--surface-muted);
-}
 
 .conversation-tabs {
   display: grid;
@@ -67,7 +104,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 2px 2px 6px;
+  margin: 2px 3px 6px;
 }
 .rail-head span {
   min-width: 24px;
@@ -84,7 +121,7 @@
 
 .conversation-item {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center; gap: 1px; padding: 7px 8px;
+  align-items: center; gap: 1px; padding: 8px 7px;
   border: 1px solid transparent; border-radius: var(--radius-sm);
   color: var(--text-soft); text-align: left;
   background: transparent; transition: border-color 120ms, background 120ms;
