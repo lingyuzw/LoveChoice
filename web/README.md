@@ -1,4 +1,4 @@
-# LoveChoice Voice Console
+# BranchWhisper
 
 这是一个前端 + 后端控制台：
 
@@ -9,10 +9,11 @@ Browser UI
   -> Qwen3-ASR -> llama.cpp -> CosyVoice3 -> Browser audio
 ```
 
-页面分成三个入口：
+页面分成四个入口：
 
 - 对话：`/static/index.html`，只放实时对话、麦克风、波形和延迟指标。
 - 服务：`/static/services.html`，放 ASR/LLM/TTS 状态、一键启动/停止、单服务启动/停止和日志。
+- 接入：`/static/index.html#integrations`，放微信个人号实例、OpenClaw 环境检查、登录、日志和链路测试。
 - 配置：`/static/settings.html`，放 ASR/LLM/TTS 路由、生成参数、VAD 参数、服务启动命令。
 
 ## 1. 只需要先启动 Web 控制台

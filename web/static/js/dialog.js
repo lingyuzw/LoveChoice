@@ -1,6 +1,6 @@
 /* ============================================================
    dialog.js — WebSocket connection, dialog events, text send
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 import { state, PIPELINE_STEPS, ACTIVE_CONVERSATION_KEY } from "./state.js";

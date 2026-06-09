@@ -1,6 +1,6 @@
 /* ============================================================
    main.js — SPA router (single HTML, all pages inline)
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 import { renderIcons } from "./utils.js";
@@ -8,6 +8,7 @@ import { renderIcons } from "./utils.js";
 let currentPage = "dashboard";
 let dashboardInitialized = false;
 let servicesInitialized = false;
+let integrationsInitialized = false;
 let currentLeave = null;
 
 /* ---- SPA navigation ---- */
@@ -97,6 +98,14 @@ async function switchPage(page, pushState = true) {
       }
       servicesModule.enterServices?.();
       currentLeave = servicesModule.leaveServices || null;
+    } else if (page === "integrations") {
+      const integrationsModule = await import("./ui-integrations.js");
+      if (!integrationsInitialized) {
+        integrationsModule.initIntegrations();
+        integrationsInitialized = true;
+      }
+      integrationsModule.enterIntegrations?.();
+      currentLeave = integrationsModule.leaveIntegrations || null;
     } else if (page === "settings") {
       const settingsModule = await import("./ui-settings.js");
       await settingsModule.initSettings();
@@ -106,12 +115,13 @@ async function switchPage(page, pushState = true) {
     console.error(`Failed to init page ${page}:`, e);
     // reset latch so user can retry
     if (page === "services") servicesInitialized = false;
+    if (page === "integrations") integrationsInitialized = false;
     if (page === "dashboard") dashboardInitialized = false;
   }
 }
 
 function normalizePage(page) {
-  return ["dashboard", "services", "settings"].includes(page) ? page : "dashboard";
+  return ["dashboard", "services", "integrations", "settings"].includes(page) ? page : "dashboard";
 }
 
 function pageFromHash() {
@@ -123,8 +133,22 @@ function pageFromHash() {
 
 /* ---- theme ---- */
 
+const THEME_KEY = "branchwhisper.theme";
+const LEGACY_THEME_KEY = "lovechoice.theme";
+
+function readTheme() {
+  const current = localStorage.getItem(THEME_KEY);
+  if (current) return current;
+  const legacy = localStorage.getItem(LEGACY_THEME_KEY);
+  if (legacy) {
+    localStorage.setItem(THEME_KEY, legacy);
+    return legacy;
+  }
+  return "dark";
+}
+
 export function loadTheme() {
-  const saved = localStorage.getItem("lovechoice.theme") || "dark";
+  const saved = readTheme();
   applyTheme(saved);
 }
 
@@ -142,7 +166,7 @@ function applyTheme(theme) {
 
 export function setTheme(theme) {
   applyTheme(theme);
-  localStorage.setItem("lovechoice.theme", theme);
+  localStorage.setItem(THEME_KEY, theme);
   // update toggle buttons
   document.querySelectorAll("#themeToggle button").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.theme === theme);
@@ -150,8 +174,9 @@ export function setTheme(theme) {
 }
 
 // 暴露主题 API 给其他模块使用
-window.__lovechoice = {
+window.__branchwhisper = {
   setTheme,
   loadTheme,
-  getTheme: () => localStorage.getItem("lovechoice.theme") || "dark",
+  getTheme: readTheme,
 };
+window.__lovechoice = window.__branchwhisper;

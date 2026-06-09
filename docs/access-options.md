@@ -1,4 +1,4 @@
-# Buding access options
+# 枝语 BranchWhisper access options
 
 本文只评估接入方式，不改变当前代码逻辑。
 
@@ -27,6 +27,20 @@ https://<电脑局域网 IP>:<端口>/
 
 ## 微信接入
 
+### 当前实现：OpenClaw 微信个人号控制台
+
+枝语 BranchWhisper 已新增“接入”页面，首版面向微信个人号实例：
+
+- 配置保存到 `web/runtime/integrations.json`。
+- 页面可检查 `node`、`npm`、`openclaw`、`ffmpeg` 是否可用。
+- 支持添加、编辑、删除、启动、停止、重启微信个人号实例。
+- 支持触发 OpenClaw 微信登录命令，二维码和状态输出进入实例日志。
+- 新增 `/api/integrations/dialog`，供桥接进程调用枝语的 LLM、记忆和 TTS。
+- `web/openclaw_bridge.py` 会读取 OpenClaw profile 下的 `openclaw-weixin/accounts.json` 和账号 token，直接调用 `ilink/bot/getupdates` 长轮询消息，并用 `ilink/bot/sendmessage` 发文字回复。
+- 默认文字回复；命中“发语音/说话/念给我听/语音回复/我想听你说话”等触发词时额外生成语音文件。
+
+注意：个人微信号接入有账号风控和接口变化风险。当前已实现文本/带转写文本的语音消息收发；TTS 语音文件已经能生成，但发送为微信语音媒体还需要补 `getuploadurl`、CDN 上传和语音格式适配。
+
 ### 个人微信号自动化
 
 不推荐。个人号自动化通常稳定性和合规风险都较高，也容易被风控。除非只是个人本机实验，否则不建议作为正式接入方案。
@@ -38,7 +52,7 @@ https://<电脑局域网 IP>:<端口>/
 基本链路：
 
 ```text
-用户消息 -> 微信服务器回调 -> Buding 后端 -> ASR/LLM/TTS -> 回复文本或媒体
+用户消息 -> 微信服务器回调 -> 枝语 BranchWhisper 后端 -> ASR/LLM/TTS -> 回复文本或媒体
 ```
 
 限制与成本：
@@ -59,7 +73,7 @@ https://<电脑局域网 IP>:<端口>/
 基本链路：
 
 ```text
-小程序录音 -> HTTPS/WebSocket -> Buding 后端 -> ASR/LLM/TTS -> 小程序播放音频
+小程序录音 -> HTTPS/WebSocket -> 枝语 BranchWhisper 后端 -> ASR/LLM/TTS -> 小程序播放音频
 ```
 
 优势：

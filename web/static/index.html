@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>LoveChoice · Voice Console</title>
+    <title>枝语 BranchWhisper</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script type="module" src="/static/js/main.js" defer></script>
@@ -13,12 +13,13 @@
       <!-- header -->
       <header class="topbar">
         <a class="brand" data-nav="dashboard">
-          <span class="brand-mark">LC</span>
-          <span><strong>LoveChoice</strong><small>Voice Console</small></span>
+          <span class="brand-mark">BW</span>
+          <span><strong>枝语</strong><small>BranchWhisper</small></span>
         </a>
         <nav class="nav-tabs" id="mainNav">
           <a class="active" data-nav="dashboard"><i data-lucide="messages-square"></i>对话</a>
           <a data-nav="services"><i data-lucide="activity"></i>服务</a>
+          <a data-nav="integrations"><i data-lucide="bot"></i>接入</a>
           <a data-nav="settings"><i data-lucide="settings-2"></i>配置</a>
         </nav>
         <div class="topbar-status">
@@ -57,7 +58,7 @@
           <section class="chat-area" id="chatArea">
             <div class="chat-welcome" id="chatWelcome">
               <div class="welcome-brand">
-                <span class="welcome-icon">LC</span>
+                <span class="welcome-icon">BW</span>
                 <h1>有什么我可以帮你的？</h1>
                 <p>打开麦克风开始语音对话，或输入文字发送消息</p>
               </div>
@@ -120,6 +121,50 @@
               </div>
             </div>
             <div class="log-viewer" id="logOutput" role="log" aria-live="polite">选择一个服务查看日志。</div>
+          </section>
+        </div>
+      </main>
+
+      <!-- page: integrations -->
+      <main class="page-view" id="page-integrations" style="display:none">
+        <div class="ops-page integrations-page">
+          <section class="page-head">
+            <div><p class="eyebrow">Channel Bots</p><h1>接入管理</h1></div>
+            <div class="head-actions">
+              <button class="primary-action" id="addIntegrationBtn" type="button"><i data-lucide="plus"></i>添加微信个人号</button>
+              <button class="secondary-action" id="refreshIntegrationsBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
+            </div>
+          </section>
+          <section class="integration-env">
+            <div class="section-head">
+              <div><p class="eyebrow">OpenClaw Runtime</p><h2>环境检查</h2></div>
+              <span class="soft-badge" id="integrationEnvBadge">检测中</span>
+            </div>
+            <div class="integration-env-grid" id="integrationEnvGrid"></div>
+          </section>
+          <section class="integration-shell">
+            <div class="integration-list" id="integrationCards"></div>
+            <aside class="integration-side">
+              <section class="integration-panel">
+                <div class="panel-head"><div><p class="eyebrow">Login & Logs</p><h2>登录与日志</h2></div><span class="soft-badge" id="selectedIntegrationBadge">--</span></div>
+                <div class="integration-qr" id="integrationLoginBox">选择实例后点击“扫码登录”，二维码或登录提示会写入日志。</div>
+                <div class="integration-account-list" id="integrationAccountList"></div>
+                <div class="inline-actions">
+                  <button class="secondary-action" id="integrationLoginBtn" type="button"><i data-lucide="scan-line"></i>扫码登录</button>
+                  <button class="secondary-action" id="integrationInstallBtn" type="button"><i data-lucide="package-plus"></i>安装适配器</button>
+                  <button class="icon-button" id="refreshIntegrationLogsBtn" type="button" title="刷新日志"><i data-lucide="rotate-cw"></i></button>
+                </div>
+                <div class="log-viewer integration-log" id="integrationLogOutput" role="log" aria-live="polite">暂无日志。</div>
+              </section>
+              <section class="integration-panel">
+                <div class="panel-head"><div><p class="eyebrow">Dialog Probe</p><h2>链路测试</h2></div></div>
+                <div class="integration-test-row">
+                  <input id="integrationTestInput" type="text" placeholder="发送一条测试消息..." autocomplete="off" />
+                  <button class="primary-action" id="integrationTestBtn" type="button"><i data-lucide="send"></i>测试</button>
+                </div>
+                <div class="integration-test-result" id="integrationTestResult">未测试</div>
+              </section>
+            </aside>
           </section>
         </div>
       </main>
@@ -209,6 +254,26 @@
           </div>
           <div class="memory-list-compact" id="memoryModalList"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- integration modal -->
+    <div class="modal-overlay" id="integrationModal" hidden>
+      <div class="modal-panel integration-modal-panel">
+        <div class="modal-head"><h2 id="integrationModalTitle">添加微信个人号</h2><button class="icon-button modal-close" type="button"><i data-lucide="x"></i></button></div>
+        <form class="modal-body" id="integrationForm">
+          <div class="form-grid">
+            <label><span>实例名</span><input id="integrationIdInput" type="text" autocomplete="off" placeholder="weixin_personal" /></label>
+            <label><span>OpenClaw Profile</span><input id="integrationProfileInput" type="text" autocomplete="off" placeholder="branchwhisper" /></label>
+            <label><span>回复模式</span><select id="integrationReplyMode"><option value="text">默认文字</option><option value="voice">默认语音</option></select></label>
+            <label class="switch-label"><span>启用实例</span><input id="integrationEnabledInput" type="checkbox" /></label>
+            <label class="wide"><span>语音触发词</span><textarea id="integrationKeywordsInput" placeholder="发语音&#10;说话&#10;念给我听"></textarea></label>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-action" id="integrationCancelBtn" type="button">取消</button>
+            <button class="primary-action" type="submit"><i data-lucide="save"></i>保存</button>
+          </div>
+        </form>
       </div>
     </div>
   </body>

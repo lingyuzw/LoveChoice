@@ -1,6 +1,6 @@
 /* ============================================================
    ui-services.js — Service orchestration page (services.html)
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 import { state } from "./state.js";
@@ -485,7 +485,7 @@ function downloadCurrentLog() {
   const text = currentLogText || $("#logOutput")?.textContent || ""; if (!text.trim()) return;
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-  a.download = `lovechoice-${state.selectedLogService || "service"}.log`;
+  a.download = `branchwhisper-${state.selectedLogService || "service"}.log`;
   document.body.appendChild(a); a.click(); a.remove();
   window.setTimeout(() => URL.revokeObjectURL(a.href), 200);
 }

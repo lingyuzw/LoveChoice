@@ -298,15 +298,47 @@ class MemoryStore:
                 layer = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "mid"
                 confidence = max(confidence, 0.85)
 
+            insert_columns = (
+                "id",
+                "key",
+                "key_norm",
+                "value",
+                "layer",
+                "count",
+                "confidence",
+                "importance",
+                "first_seen_at",
+                "last_seen_at",
+                "last_changed_at",
+                "pinned",
+                "source",
+                "memory_type",
+                "time_text",
+                "event_date",
+                "time_of_day",
+            )
+            insert_values = (
+                str(uuid.uuid4()),
+                key,
+                key_norm,
+                value,
+                layer,
+                1,
+                confidence,
+                importance,
+                now,
+                now,
+                now,
+                1 if item.get("pinned") else 0,
+                source,
+                memory_type,
+                time_text,
+                event_date,
+                time_of_day,
+            )
+            placeholders = ", ".join("?" for _ in insert_values)
             conn.execute(
-                "INSERT INTO memory_items ("
-                " id, key, key_norm, value, layer, count, confidence, importance,"
-                " first_seen_at, last_seen_at, last_changed_at, pinned, source,"
-                " memory_type, time_text, event_date, time_of_day"
-                ") VALUES ("
-                " ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?,"
-                " ?, ?, ?, ?"
-                ")"
+                f"INSERT INTO memory_items ({', '.join(insert_columns)}) VALUES ({placeholders})"
                 " ON CONFLICT(key_norm) DO UPDATE SET"
                 f" value = excluded.value,"
                 f" layer = CASE"
@@ -319,24 +351,7 @@ class MemoryStore:
                 f" last_seen_at = excluded.last_seen_at,"
                 f" last_changed_at = excluded.last_changed_at,"
                 f" pinned = MAX(memory_items.pinned, {1 if item.get('pinned') else 0!r})",
-                (
-                    str(uuid.uuid4()),
-                    key,
-                    key_norm,
-                    value,
-                    layer,
-                    confidence,
-                    importance,
-                    now,
-                    now,
-                    now,
-                    1 if item.get("pinned") else 0,
-                    source,
-                    memory_type,
-                    time_text,
-                    event_date,
-                    time_of_day,
-                ),
+                insert_values,
             )
 
             row = conn.execute("SELECT id FROM memory_items WHERE key_norm = ?", (key_norm,)).fetchone()

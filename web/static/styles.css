@@ -1,10 +1,11 @@
 /* ============================================================
    styles.css — Legacy entry point (imports modular CSS)
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 @import url('./css/base.css');
 @import url('./css/layout.css');
 @import url('./css/dashboard.css');
 @import url('./css/services.css');
+@import url('./css/integrations.css');
 @import url('./css/settings.css');

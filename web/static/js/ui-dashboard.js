@@ -1,6 +1,6 @@
 /* ============================================================
    ui-dashboard.js — ChatGPT-style chat dashboard
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 import { state, ACTIVE_CONVERSATION_KEY } from "./state.js";

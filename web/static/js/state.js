@@ -1,10 +1,22 @@
 /* ============================================================
    state.js — Global application state & default constants
-   LoveChoice Voice Console
+   BranchWhisper
    ============================================================ */
 
-export const ACTIVE_CONVERSATION_KEY = "lovechoice.activeConversationId";
+export const ACTIVE_CONVERSATION_KEY = "branchwhisper.activeConversationId";
+const LEGACY_ACTIVE_CONVERSATION_KEY = "lovechoice.activeConversationId";
 export const PIPELINE_STEPS = ["vad", "asr", "llm", "tts"];
+
+function readActiveConversationId() {
+  const current = localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+  if (current !== null) return current;
+  const legacy = localStorage.getItem(LEGACY_ACTIVE_CONVERSATION_KEY);
+  if (legacy) {
+    localStorage.setItem(ACTIVE_CONVERSATION_KEY, legacy);
+    return legacy;
+  }
+  return "";
+}
 
 /* ---- default config (used as fallback when backend is unavailable) ---- */
 
@@ -98,7 +110,7 @@ export const state = {
   currentConfig: { ...DEFAULT_CONFIG },
   services: DEFAULT_SERVICES.map((s) => ({ ...s })),
   conversations: [],
-  activeConversationId: localStorage.getItem(ACTIVE_CONVERSATION_KEY) || "",
+  activeConversationId: readActiveConversationId(),
   activeConversation: null,
 
   /* audio */
@@ -134,6 +146,14 @@ export const state = {
   selectedLogService: "asr",
   servicePollTimer: 0,
   systemResources: null,
+
+  /* integrations page */
+  integrations: [],
+  integrationEnv: null,
+  selectedIntegrationId: "weixin_personal",
+  integrationPollTimer: 0,
+  integrationLoginPollTimer: 0,
+  integrationLoginSession: null,
 
   /* settings page */
   memories: [],

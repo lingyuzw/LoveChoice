@@ -17,7 +17,7 @@
    ============================================================ */
 
 console.log(
-  "%cLoveChoice Voice Console%c\n前端模块已升级。入口: /static/js/main.js",
+  "%cBranchWhisper%c\n前端模块已升级。入口: /static/js/main.js",
   "color:#0f766e;font-weight:900;font-size:14px;",
   "color:#6b7280;"
 );

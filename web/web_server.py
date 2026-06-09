@@ -36,6 +36,7 @@ from config import (
     update_llm_api_key,
 )
 from conversations import ConversationStore
+from integrations import ExternalDialogEngine, IntegrationManager
 from runtime_brain import MemoryStore, ToolManager, parse_tool_call
 from services import ServiceManager, check_service, health_url_from
 from system_resources import collect_system_resources
@@ -56,6 +57,8 @@ CONVERSATION_DIR = RUNTIME_DIR / "conversations"
 SETTINGS_CONFIG = RUNTIME_DIR / "settings.json"
 MEMORY_DB = RUNTIME_DIR / "memory.sqlite3"
 TOOLS_CONFIG = RUNTIME_DIR / "tools.json"
+INTEGRATIONS_CONFIG = RUNTIME_DIR / "integrations.json"
+INTEGRATION_MEDIA_DIR = RUNTIME_DIR / "integration_media"
 
 END = object()
 GLOBAL_TTS_LOCK = asyncio.Lock()
@@ -100,11 +103,30 @@ def is_local_request(request: Request) -> bool:
 
 
 def require_local_service_control(request: Request) -> None:
-    if is_local_request(request) or os.environ.get("BUDING_ALLOW_REMOTE_SERVICE_CONTROL") == "1":
+    if (
+        is_local_request(request)
+        or os.environ.get("BRANCHWHISPER_ALLOW_REMOTE_SERVICE_CONTROL") == "1"
+        or os.environ.get("BUDING_ALLOW_REMOTE_SERVICE_CONTROL") == "1"
+    ):
         return
     raise HTTPException(
         status_code=403,
-        detail="Service control is restricted to localhost. Set BUDING_ALLOW_REMOTE_SERVICE_CONTROL=1 to override.",
+        detail=(
+            "Service control is restricted to localhost. "
+            "Set BRANCHWHISPER_ALLOW_REMOTE_SERVICE_CONTROL=1 to override."
+        ),
+    )
+
+
+def require_integration_dialog_access(request: Request) -> None:
+    if is_local_request(request) or os.environ.get("BRANCHWHISPER_ALLOW_REMOTE_INTEGRATION_DIALOG") == "1":
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Integration dialog is restricted to localhost. "
+            "Set BRANCHWHISPER_ALLOW_REMOTE_INTEGRATION_DIALOG=1 to allow remote bridge calls."
+        ),
     )
 
 
@@ -239,7 +261,7 @@ def create_app(args) -> FastAPI:
     # The web server is a single orchestration endpoint. The ASR/LLM/TTS models
     # still live in their own services so they can be restarted and tuned
     # independently.
-    app = FastAPI(title="LoveChoice Voice Console")
+    app = FastAPI(title="枝语 BranchWhisper")
     app.state.settings = load_persisted_settings(SessionSettings.from_args(args), SETTINGS_CONFIG)
     enable_default_capabilities(app.state.settings)
     app.state.vad_store = VadModelStore(args.vad_device)
@@ -249,6 +271,14 @@ def create_app(args) -> FastAPI:
     app.state.tool_manager = ToolManager(TOOLS_CONFIG)
     app.state.tool_manager.update_config(
         {"builtins": {tool["id"]: {"enabled": True} for tool in ToolManager.BUILTIN_TOOLS}}
+    )
+    app.state.integration_manager = IntegrationManager(INTEGRATIONS_CONFIG, LOG_DIR, INTEGRATION_MEDIA_DIR)
+    app.state.external_dialog_engine = ExternalDialogEngine(
+        app.state.integration_manager,
+        app.state.conversation_store,
+        app.state.memory_store,
+        app.state.tool_manager,
+        INTEGRATION_MEDIA_DIR,
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -394,6 +424,137 @@ def create_app(args) -> FastAPI:
     async def clear_service_logs(service_id: str, request: Request):
         require_local_service_control(request)
         return app.state.service_manager.clear_logs(service_id)
+
+    @app.get("/api/integrations")
+    async def integrations(request: Request):
+        require_local_service_control(request)
+        return app.state.integration_manager.list_integrations()
+
+    @app.post("/api/integrations")
+    async def create_integration(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            item = app.state.integration_manager.create_integration(payload or {})
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"integration": item, **app.state.integration_manager.list_integrations()}
+
+    @app.patch("/api/integrations/{integration_id}")
+    async def update_integration(integration_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            item = app.state.integration_manager.update_integration(integration_id, payload or {})
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"integration": item, **app.state.integration_manager.list_integrations()}
+
+    @app.delete("/api/integrations/{integration_id}")
+    async def delete_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        ok = app.state.integration_manager.delete_integration(integration_id)
+        return {"ok": ok, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/install")
+    async def install_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        try:
+            result = await app.state.integration_manager.install_weixin_cli(integration_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/start")
+    async def start_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        try:
+            result = await app.state.integration_manager.gateway_action(integration_id, "start")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/stop")
+    async def stop_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        process_result = app.state.integration_manager.stop_process(integration_id)
+        try:
+            gateway_result = await app.state.integration_manager.gateway_action(integration_id, "stop")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": {"process": process_result, "gateway": gateway_result}, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/restart")
+    async def restart_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        app.state.integration_manager.stop_process(integration_id)
+        try:
+            result = await app.state.integration_manager.gateway_action(integration_id, "restart")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/login")
+    async def login_integration(integration_id: str, request: Request):
+        require_local_service_control(request)
+        try:
+            result = await app.state.integration_manager.login(integration_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/login/qr")
+    async def start_integration_qr_login(integration_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            result = await app.state.integration_manager.request_weixin_login_qr(
+                integration_id,
+                force=bool((payload or {}).get("force", False)),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/login/poll")
+    async def poll_integration_qr_login(integration_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            result = await app.state.integration_manager.poll_weixin_login(
+                integration_id,
+                verify_code=str((payload or {}).get("verify_code") or ""),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.post("/api/integrations/{integration_id}/bridge/start")
+    async def start_integration_bridge(integration_id: str, request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        payload = payload or {}
+        branchwhisper_url = str(
+            payload.get("branchwhisper_url") or payload.get("buding_url") or "http://127.0.0.1:7860"
+        )
+        try:
+            result = await app.state.integration_manager.start_bridge(
+                integration_id,
+                branchwhisper_url=branchwhisper_url,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Integration not found") from exc
+        return {"result": result, **app.state.integration_manager.list_integrations()}
+
+    @app.get("/api/integrations/{integration_id}/logs")
+    async def integration_logs(integration_id: str, request: Request, max_bytes: int = 36000):
+        require_local_service_control(request)
+        return {"id": integration_id, "logs": app.state.integration_manager.read_logs(integration_id, max_bytes=max_bytes)}
+
+    @app.post("/api/integrations/dialog")
+    async def integration_dialog(request: Request, payload: dict | None = Body(default=None)):
+        require_integration_dialog_access(request)
+        try:
+            return await app.state.external_dialog_engine.handle(payload or {}, app.state.settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Integration dialog failed: {exc}") from exc
 
     @app.get("/api/conversations")
     async def conversations():

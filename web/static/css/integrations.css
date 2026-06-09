@@ -1,0 +1,303 @@
+/* ============================================================
+   integrations.css — Channel bot management
+   BranchWhisper
+   ============================================================ */
+
+.integrations-page { gap: 14px; }
+
+.integration-env,
+.integration-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 94%, var(--success) 6%);
+  box-shadow: var(--shadow-sm);
+}
+
+.integration-env-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.integration-env-card {
+  min-height: 112px;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 5px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.integration-env-card.ready { border-color: rgba(120,199,122,0.24); }
+.integration-env-card.missing { border-color: rgba(231,104,104,0.24); }
+.integration-env-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--success);
+  background: var(--success-soft);
+}
+.integration-env-card.missing .integration-env-icon {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.integration-env-card strong { color: var(--text); font-size: var(--font-sm); }
+.integration-env-card small,
+.integration-env-card span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integration-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 12px;
+  align-items: start;
+}
+
+.integration-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.integration-side { display: grid; gap: 12px; }
+
+.integration-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent 70px),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 140ms, background 200ms, box-shadow 200ms, transform 150ms;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.integration-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--text-muted);
+  opacity: 0.3;
+}
+.integration-card.active::before { background: var(--success); opacity: 1; }
+.integration-card.loading::before { background: var(--warning); opacity: 1; }
+.integration-card.failed::before { background: var(--danger); opacity: 1; }
+.integration-card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary-glow), var(--shadow-sm);
+}
+
+.integration-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.integration-title {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.integration-title strong {
+  color: var(--text);
+  font-size: calc(15px * var(--ui-font-scale));
+  font-weight: 650;
+}
+.integration-title small {
+  grid-column: 2;
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.integration-card.active .status-dot { background: var(--success); }
+.integration-card.loading .status-dot { background: var(--warning); }
+.integration-card.failed .status-dot { background: var(--danger); }
+
+.integration-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.integration-meta .meta-cell strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.integration-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.integration-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.integration-qr {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.integration-login-placeholder,
+.integration-login-meta {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.integration-login-placeholder strong,
+.integration-login-meta strong {
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+
+.integration-login-placeholder span,
+.integration-login-meta span,
+.integration-login-meta small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}
+
+.integration-qr-image {
+  width: 136px;
+  height: 136px;
+  flex: 0 0 136px;
+  object-fit: contain;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.integration-account-list {
+  display: grid;
+  gap: 6px;
+}
+
+.integration-account-item {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-muted) 92%, var(--success) 8%);
+}
+.integration-account-item.muted {
+  background: var(--surface-muted);
+}
+.integration-account-item span {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 800;
+}
+.integration-account-item strong,
+.integration-account-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.integration-account-item strong {
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.integration-account-item small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.integration-log {
+  height: 360px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background:
+    linear-gradient(180deg, rgba(120,199,122,0.04), transparent 120px),
+    var(--log-bg);
+}
+
+.integration-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.integration-test-result {
+  min-height: 88px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-soft);
+  background: var(--surface-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.integration-modal-panel { width: min(620px, calc(100vw - 40px)); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.switch-label {
+  align-content: end;
+  grid-template-columns: 1fr;
+}
+.switch-label input[type="checkbox"] {
+  width: 40px;
+  height: 22px;
+  accent-color: var(--primary);
+}
+
+@media (max-width: 1180px) {
+  .integration-shell { grid-template-columns: 1fr; }
+  .integration-env-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .integration-list,
+  .integration-env-grid { grid-template-columns: 1fr; }
+  .integration-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .integration-test-row { grid-template-columns: 1fr; }
+  .integration-qr { align-items: flex-start; flex-direction: column; }
+}

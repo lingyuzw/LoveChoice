@@ -1,6 +1,6 @@
 /* ============================================================
    audio.js — Audio capture, PCM playback, level metering
-   LoveChoice Voice Console
+   BranchWhisper
    ============================================================ */
 
 import { state } from "./state.js";

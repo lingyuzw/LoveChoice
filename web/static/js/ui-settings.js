@@ -1,6 +1,6 @@
 /* ============================================================
    ui-settings.js — Configuration page (settings.html)
-   LoveChoice Voice Console · Precision Console
+   BranchWhisper · Precision Console
    ============================================================ */
 
 import { state, DEFAULT_CONFIG } from "./state.js";
@@ -15,7 +15,7 @@ export async function initSettings() {
   setupSettingsEvents();
 
   // 同步主题 toggle 初始状态
-  const savedTheme = localStorage.getItem("lovechoice.theme") || "dark";
+  const savedTheme = window.__branchwhisper?.getTheme?.() || "dark";
   document.querySelectorAll("#themeToggle button").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.theme === savedTheme);
   });
@@ -43,8 +43,8 @@ function setupSettingsEvents() {
   document.querySelectorAll("#themeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => {
       const theme = btn.dataset.theme;
-      if (window.__lovechoice) {
-        window.__lovechoice.setTheme(theme);
+      if (window.__branchwhisper) {
+        window.__branchwhisper.setTheme(theme);
       } else {
         // 降级方案：直接操作 DOM + localStorage
         if (theme === "light") {
@@ -52,7 +52,7 @@ function setupSettingsEvents() {
         } else {
           document.documentElement.classList.remove("theme-light");
         }
-        localStorage.setItem("lovechoice.theme", theme);
+        localStorage.setItem("branchwhisper.theme", theme);
         document.querySelectorAll("#themeToggle button").forEach((b) => {
           b.classList.toggle("active", b.dataset.theme === theme);
         });

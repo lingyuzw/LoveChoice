@@ -245,7 +245,10 @@ def add_settings_args(parser) -> None:
 
     parser.add_argument("--llm-url", default="http://127.0.0.1:8080/v1/chat/completions")
     parser.add_argument("--llm-model", default="qwen3.5-9b")
-    parser.add_argument("--llm-api-key", default=os.environ.get("BUDING_LLM_API_KEY", ""))
+    parser.add_argument(
+        "--llm-api-key",
+        default=os.environ.get("BRANCHWHISPER_LLM_API_KEY", os.environ.get("BUDING_LLM_API_KEY", "")),
+    )
     parser.add_argument("--temperature", type=float, default=0.35)
     parser.add_argument("--max-tokens", type=int, default=220)
     parser.add_argument("--history-turns", type=int, default=8)

@@ -1,6 +1,6 @@
 /* ============================================================
    utils.js — DOM helpers, formatting, small utilities
-   LoveChoice Voice Console
+   BranchWhisper
    ============================================================ */
 
 /* ---- DOM query ---- */
