@@ -66,6 +66,10 @@ class SessionSettings:
     history_turns: int
     system: str
     ui_font_scale: float
+    web_user_name: str
+    web_user_avatar_url: str
+    web_assistant_name: str
+    web_assistant_avatar_url: str
     memory_enabled: bool
     memory_extract_enabled: bool
     memory_short_to_mid_days: int
@@ -110,6 +114,10 @@ class SessionSettings:
             history_turns=args.history_turns,
             system=args.system,
             ui_font_scale=args.ui_font_scale,
+            web_user_name=args.web_user_name,
+            web_user_avatar_url=args.web_user_avatar_url,
+            web_assistant_name=args.web_assistant_name,
+            web_assistant_avatar_url=args.web_assistant_avatar_url,
             memory_enabled=args.memory_enabled,
             memory_extract_enabled=args.memory_extract_enabled,
             memory_short_to_mid_days=args.memory_short_to_mid_days,
@@ -142,7 +150,9 @@ class SessionSettings:
     def update_from_dict(self, data: dict) -> None:
         allowed = set(asdict(self))
         for key, value in data.items():
-            if key not in allowed or value in (None, ""):
+            if key not in allowed or value is None:
+                continue
+            if value == "" and key not in {"web_user_avatar_url", "web_assistant_avatar_url"}:
                 continue
             current = getattr(self, key)
             try:
@@ -256,6 +266,10 @@ def add_settings_args(parser) -> None:
     parser.add_argument("--history-turns", type=int, default=8)
     parser.add_argument("--system", default=DEFAULT_SYSTEM)
     parser.add_argument("--ui-font-scale", type=float, default=1.0)
+    parser.add_argument("--web-user-name", default="我")
+    parser.add_argument("--web-user-avatar-url", default="")
+    parser.add_argument("--web-assistant-name", default="枝语")
+    parser.add_argument("--web-assistant-avatar-url", default="")
 
     parser.add_argument("--memory-enabled", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--memory-extract-enabled", action=argparse.BooleanOptionalAction, default=True)

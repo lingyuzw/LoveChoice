@@ -196,12 +196,48 @@
           <section class="settings-content">
             <article class="theme-section" id="appearance">
               <div class="panel-head"><div><p class="eyebrow">Appearance</p><h2>外观</h2></div></div>
-              <div class="theme-toggle-group" id="themeToggle">
-                <button class="active" data-theme="dark"><i data-lucide="moon"></i>深色</button>
-                <button data-theme="light"><i data-lucide="sun"></i>浅色</button>
-              </div>
-              <div class="form-grid appearance-grid">
-                <label><span>页面文字大小</span><input id="uiFontScale" type="number" min="0.9" max="1.25" step="0.05" /></label>
+              <div class="appearance-layout">
+                <section class="appearance-card appearance-card--compact">
+                  <div class="appearance-card-head">
+                    <strong>界面</strong>
+                    <small>主题与字号</small>
+                  </div>
+                  <div class="theme-toggle-group theme-toggle-group--compact" id="themeToggle">
+                    <button class="active" data-theme="dark"><i data-lucide="moon"></i>深色</button>
+                    <button data-theme="light"><i data-lucide="sun"></i>浅色</button>
+                  </div>
+                  <label class="compact-field"><span>页面文字大小</span><input id="uiFontScale" type="number" min="0.9" max="1.25" step="0.05" /></label>
+                </section>
+                <section class="appearance-card appearance-identity-card" data-chat-identity="user">
+                  <div class="identity-preview" id="webUserAvatarPreview">我</div>
+                  <div class="identity-form">
+                    <div class="appearance-card-head">
+                      <strong>我的显示</strong>
+                      <small>仅 Web 对话页生效</small>
+                    </div>
+                    <label><span>显示名称</span><input id="webUserName" type="text" maxlength="40" /></label>
+                    <input class="visually-hidden avatar-file-input" id="webUserAvatarFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                    <div class="avatar-upload-row">
+                      <button class="secondary-action avatar-upload-btn" id="webUserAvatarBtn" type="button"><i data-lucide="image-plus"></i>选择头像</button>
+                      <button class="small-button avatar-clear-btn" id="webUserAvatarClearBtn" type="button"><i data-lucide="x"></i>清除</button>
+                    </div>
+                  </div>
+                </section>
+                <section class="appearance-card appearance-identity-card" data-chat-identity="assistant">
+                  <div class="identity-preview" id="webAssistantAvatarPreview">枝</div>
+                  <div class="identity-form">
+                    <div class="appearance-card-head">
+                      <strong>AI 显示</strong>
+                      <small>用于 Web 对话气泡</small>
+                    </div>
+                    <label><span>显示名称</span><input id="webAssistantName" type="text" maxlength="40" /></label>
+                    <input class="visually-hidden avatar-file-input" id="webAssistantAvatarFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                    <div class="avatar-upload-row">
+                      <button class="secondary-action avatar-upload-btn" id="webAssistantAvatarBtn" type="button"><i data-lucide="image-plus"></i>选择头像</button>
+                      <button class="small-button avatar-clear-btn" id="webAssistantAvatarClearBtn" type="button"><i data-lucide="x"></i>清除</button>
+                    </div>
+                  </div>
+                </section>
               </div>
             </article>
             <article class="settings-panel" id="engine">

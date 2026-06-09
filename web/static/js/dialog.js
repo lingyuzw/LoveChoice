@@ -10,9 +10,18 @@ import { stopAssistantAudio, schedulePcm16, releaseAfterPlayback } from "./audio
 
 let onTranscriptUpdated = null;
 let onPipelineUpdate = null;
+let appearanceEventsBound = false;
 
 export function setTranscriptCallback(fn) { onTranscriptUpdated = fn; }
 export function setPipelineUpdater(fn) { onPipelineUpdate = fn; }
+
+export function bindAppearanceRefresh() {
+  if (appearanceEventsBound) return;
+  appearanceEventsBound = true;
+  window.addEventListener("branchwhisper:appearance-updated", () => {
+    if (state.activeConversation) renderTranscript(state.activeConversation.messages || []);
+  });
+}
 
 /* ---- WebSocket ---- */
 
@@ -138,14 +147,15 @@ function addMsg(role, text, meta = {}) {
   row.className = `message-row ${role}`;
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  const name = meta.display_name || (role === "user" ? "我" : "枝语");
-  if (meta.avatar_url) {
+  const identity = chatIdentity(role, meta);
+  const name = identity.name;
+  if (identity.avatarUrl) {
     const image = document.createElement("img");
-    image.src = meta.avatar_url;
+    image.src = identity.avatarUrl;
     image.alt = name;
     avatar.appendChild(image);
   } else {
-    avatar.textContent = role === "user" ? "我" : "枝";
+    avatar.textContent = identity.initial;
   }
   const body = document.createElement("div");
   body.className = "message-body";
@@ -160,6 +170,34 @@ function addMsg(role, text, meta = {}) {
   t.appendChild(row);
   scrollTranscript();
   return node;
+}
+
+function chatIdentity(role, meta = {}) {
+  const isExternal = Boolean(meta.platform_id || meta.sender_id);
+  if (isExternal && (meta.display_name || meta.avatar_url)) {
+    const externalName = meta.display_name || (role === "user" ? "我" : "枝语");
+    return {
+      name: externalName,
+      avatarUrl: meta.avatar_url || "",
+      initial: firstIdentityChar(externalName, role === "user" ? "我" : "枝"),
+    };
+  }
+  const name = role === "user"
+    ? (state.currentConfig.web_user_name || "我")
+    : (state.currentConfig.web_assistant_name || "枝语");
+  const avatarUrl = role === "user"
+    ? (state.currentConfig.web_user_avatar_url || "")
+    : (state.currentConfig.web_assistant_avatar_url || "");
+  return {
+    name,
+    avatarUrl,
+    initial: firstIdentityChar(name, role === "user" ? "我" : "枝"),
+  };
+}
+
+function firstIdentityChar(name, fallback) {
+  const chars = Array.from(String(name || "").trim());
+  return chars[0] || fallback;
 }
 function appendAssistant(text) { if (!state.currentAssistant) state.currentAssistant = addMsg("assistant", ""); if (state.currentAssistant) state.currentAssistant.textContent += text; scrollTranscript(); }
 export function clearTranscript() {

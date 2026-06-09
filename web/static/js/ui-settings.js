@@ -25,6 +25,30 @@ import {
 let eventsBound = false;
 let toolProviderDraft = {};
 let editingToolProvider = "";
+const CHAT_IDENTITY = {
+  user: {
+    nameKey: "web_user_name",
+    avatarKey: "web_user_avatar_url",
+    nameId: "webUserName",
+    fileId: "webUserAvatarFile",
+    buttonId: "webUserAvatarBtn",
+    clearId: "webUserAvatarClearBtn",
+    previewId: "webUserAvatarPreview",
+    fallbackName: "我",
+    fallbackInitial: "我",
+  },
+  assistant: {
+    nameKey: "web_assistant_name",
+    avatarKey: "web_assistant_avatar_url",
+    nameId: "webAssistantName",
+    fileId: "webAssistantAvatarFile",
+    buttonId: "webAssistantAvatarBtn",
+    clearId: "webAssistantAvatarClearBtn",
+    previewId: "webAssistantAvatarPreview",
+    fallbackName: "枝语",
+    fallbackInitial: "枝",
+  },
+};
 
 export async function initSettings() {
   setupSettingsEvents();
@@ -60,6 +84,7 @@ function setupSettingsEvents() {
   $("#saveAllBtn")?.addEventListener("click", saveSettingsPage);
   $("#toolResolveBtn")?.addEventListener("click", runToolResolve);
   $("#addBotProfileBtn")?.addEventListener("click", addBotProfile);
+  bindChatIdentityEvents();
   $("#toolProviderCancelBtn")?.addEventListener("click", closeToolProviderModal);
   $("#toolProviderApplyBtn")?.addEventListener("click", applyToolProviderModal);
   document.querySelector("#toolProviderModal .modal-close")?.addEventListener("click", closeToolProviderModal);
@@ -127,6 +152,10 @@ const CONFIG_FIELD_MAP = [
   { key: "max_tokens", id: "maxTokens" },
   { key: "history_turns", id: "historyTurns" },
   { key: "ui_font_scale", id: "uiFontScale" },
+  { key: "web_user_name", id: "webUserName" },
+  { key: "web_user_avatar_url", id: "webUserAvatarFile", virtual: true },
+  { key: "web_assistant_name", id: "webAssistantName" },
+  { key: "web_assistant_avatar_url", id: "webAssistantAvatarFile", virtual: true },
   { key: "system", id: "systemPrompt" },
   { key: "tools_enabled", id: "toolsEnabled" },
   { key: "tools_auto_call", id: "toolsAutoCall" },
@@ -150,15 +179,18 @@ const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "ui_fo
 
 function fillConfig(config) {
   for (const f of CONFIG_FIELD_MAP) {
+    if (f.virtual) continue;
     if (!document.getElementById(f.id)) continue;
     const val = config[f.key] !== undefined ? config[f.key] : DEFAULT_CONFIG[f.key];
     setValue(f.id, val);
   }
+  renderChatIdentities(config);
 }
 
 function collectConfig() {
   const result = {};
   for (const f of CONFIG_FIELD_MAP) {
+    if (f.virtual) continue;
     if (!document.getElementById(f.id)) continue;
     const raw = value(f.id, "");
     if (NUM_FIELDS.has(f.key)) {
@@ -168,7 +200,67 @@ function collectConfig() {
       result[f.key] = raw || state.currentConfig[f.key] || DEFAULT_CONFIG[f.key];
     }
   }
+  for (const def of Object.values(CHAT_IDENTITY)) {
+    result[def.nameKey] = value(def.nameId, state.currentConfig[def.nameKey] || def.fallbackName).trim() || def.fallbackName;
+    result[def.avatarKey] = state.currentConfig[def.avatarKey] || "";
+  }
   return result;
+}
+
+function bindChatIdentityEvents() {
+  for (const [role, def] of Object.entries(CHAT_IDENTITY)) {
+    const file = $(`#${def.fileId}`);
+    const button = $(`#${def.buttonId}`);
+    const clear = $(`#${def.clearId}`);
+    button?.addEventListener("click", () => file?.click());
+    file?.addEventListener("change", (event) => handleChatAvatar(role, event));
+    clear?.addEventListener("click", () => {
+      state.currentConfig[def.avatarKey] = "";
+      if (file) file.value = "";
+      renderChatIdentity(role, state.currentConfig);
+    });
+  }
+}
+
+function renderChatIdentities(config = state.currentConfig) {
+  for (const role of Object.keys(CHAT_IDENTITY)) renderChatIdentity(role, config);
+}
+
+function renderChatIdentity(role, config = state.currentConfig) {
+  const def = CHAT_IDENTITY[role];
+  if (!def) return;
+  const name = String(config[def.nameKey] || def.fallbackName).trim() || def.fallbackName;
+  const avatarUrl = String(config[def.avatarKey] || "").trim();
+  const preview = $(`#${def.previewId}`);
+  if (!preview) return;
+  preview.innerHTML = "";
+  if (avatarUrl) {
+    const img = document.createElement("img");
+    img.src = avatarUrl;
+    img.alt = name;
+    preview.appendChild(img);
+  } else {
+    preview.textContent = firstIdentityChar(name, def.fallbackInitial);
+  }
+}
+
+async function handleChatAvatar(role, event) {
+  const def = CHAT_IDENTITY[role];
+  const file = event.target.files?.[0];
+  if (!def || !file) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    const result = await uploadAvatar(dataUrl);
+    state.currentConfig[def.avatarKey] = result.asset?.url || "";
+    renderChatIdentity(role, state.currentConfig);
+  } catch (e) {
+    showToast(`头像上传失败：${e.message}`, "error");
+  }
+}
+
+function firstIdentityChar(name, fallback) {
+  const chars = Array.from(String(name || "").trim());
+  return chars[0] || fallback;
 }
 
 const PROVIDER_FIELDS = {
@@ -337,28 +429,14 @@ function createBotProfileCard(profile) {
   const card = document.createElement("section");
   card.className = "bot-profile-card";
   card.dataset.profileId = profile.id;
-  const avatar = document.createElement("div");
-  avatar.className = "bot-avatar-preview";
-  if (profile.avatar_url) {
-    const img = document.createElement("img");
-    img.src = profile.avatar_url;
-    img.alt = profile.name || profile.id;
-    avatar.appendChild(img);
-  } else {
-    avatar.textContent = "枝";
-  }
   const form = document.createElement("div");
   form.className = "form-grid";
   form.innerHTML = `
-    <label><span>ID</span><input class="bot-id" type="text" value="${escapeAttr(profile.id)}" ${profile.id === "default" ? "disabled" : ""}></label>
-    <label><span>名称</span><input class="bot-name" type="text" value="${escapeAttr(profile.name || "")}"></label>
     <label><span>工具</span><select class="bot-tools"><option value="true">启用</option><option value="false">关闭</option></select></label>
     <label><span>风格</span><input class="bot-style" type="text" value="${escapeAttr(profile.reply_style || "natural")}"></label>
-    <label class="wide"><span>头像</span><input class="bot-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
     <label class="wide"><span>System Prompt</span><textarea class="bot-system">${escapeHtml(profile.system || "")}</textarea></label>
   `;
   form.querySelector(".bot-tools").value = String(profile.tools_enabled !== false);
-  form.querySelector(".bot-avatar-file").addEventListener("change", (event) => handleBotAvatar(card, event));
   const actions = document.createElement("div");
   actions.className = "inline-actions";
   const del = document.createElement("button");
@@ -367,24 +445,9 @@ function createBotProfileCard(profile) {
   del.append(createIcon("trash-2"), document.createTextNode("删除"));
   del.disabled = profile.id === "default";
   del.addEventListener("click", () => handleDeleteBotProfile(profile.id));
-  card.append(avatar, form, actions);
+  card.append(form, actions);
   actions.appendChild(del);
   return card;
-}
-
-async function handleBotAvatar(card, event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const dataUrl = await fileToDataUrl(file);
-  const result = await uploadAvatar(dataUrl);
-  card.dataset.avatarUrl = result.asset?.url || "";
-  const preview = card.querySelector(".bot-avatar-preview");
-  if (preview && card.dataset.avatarUrl) {
-    preview.innerHTML = "";
-    const img = document.createElement("img");
-    img.src = card.dataset.avatarUrl;
-    preview.appendChild(img);
-  }
 }
 
 async function addBotProfile() {
@@ -397,9 +460,10 @@ async function addBotProfile() {
 async function saveBotProfiles() {
   for (const card of document.querySelectorAll("[data-profile-id]")) {
     const id = card.dataset.profileId;
+    const previous = state.botProfiles.find((p) => p.id === id) || {};
     await updateBotProfile(id, {
-      name: card.querySelector(".bot-name")?.value.trim() || "枝语",
-      avatar_url: card.dataset.avatarUrl || state.botProfiles.find((p) => p.id === id)?.avatar_url || "",
+      name: previous.name || "枝语",
+      avatar_url: previous.avatar_url || "",
       tools_enabled: card.querySelector(".bot-tools")?.value !== "false",
       reply_style: card.querySelector(".bot-style")?.value.trim() || "natural",
       system: card.querySelector(".bot-system")?.value || "",
@@ -445,6 +509,7 @@ async function saveSettingsPage() {
     renderToolProviders();
     await loadServices(); renderProfileList();
     renderBotProfiles();
+    window.dispatchEvent(new CustomEvent("branchwhisper:appearance-updated"));
     showToast("配置已应用", "success");
   } catch (e) { showToast(`保存失败：${e.message}`, "error"); }
 }

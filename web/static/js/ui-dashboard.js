@@ -6,7 +6,7 @@
 import { state, ACTIVE_CONVERSATION_KEY } from "./state.js";
 import { $, setText, renderIcons, formatConversationMeta, showToast, showSkeleton, showConfirm, createIcon } from "./utils.js";
 import { loadConfig, loadServices, loadConversations, createConversation, deleteConversation, loadMemory, addMemory, deleteMemory } from "./api.js";
-import { connectSocket, reconnectDialog, clearTranscript, selectConversation, resizeComposerInput, interruptAssistant, setTranscriptCallback, setPipelineUpdater } from "./dialog.js";
+import { bindAppearanceRefresh, connectSocket, reconnectDialog, clearTranscript, selectConversation, resizeComposerInput, interruptAssistant, setTranscriptCallback, setPipelineUpdater } from "./dialog.js";
 import { startMic, stopMic, sendMicSamples, shouldTriggerBargeIn } from "./audio.js";
 
 let hasMessages = false;
@@ -29,6 +29,7 @@ export async function initDashboard() {
   resetPipelineCompact();
   setPipelineUpdater((stage, label) => updatePipelineCompact(stage, label));
   setTranscriptCallback(() => { renderConversationList(); syncChatView(); });
+  bindAppearanceRefresh();
   connectSocket();
   drawScope();
   setupDashboardEvents();
