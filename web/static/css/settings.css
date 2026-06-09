@@ -395,14 +395,14 @@
 
 .proactive-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .proactive-card {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 15px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background:
@@ -411,13 +411,23 @@
 }
 
 .proactive-card.wide {
-  grid-column: 1 / -1;
+  grid-column: auto;
+}
+
+.proactive-card > .form-grid.compact {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.proactive-time-grid {
+  grid-template-columns: minmax(160px, 0.7fr) minmax(180px, 1fr) minmax(180px, 1fr);
 }
 
 .toggle-row,
 .greeting-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 8px;
 }
 
@@ -437,7 +447,23 @@
 
 .greeting-grid label:has(input[type="time"]) {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(76px, auto) minmax(120px, 1fr);
+  align-items: center;
+}
+
+.proactive-card input[type="time"],
+.proactive-card input[type="datetime-local"] {
+  min-width: 136px;
+  font-variant-numeric: tabular-nums;
+}
+
+.proactive-card select,
+.proactive-card input {
+  min-width: 0;
+}
+
+.proactive-card textarea {
+  min-height: 92px;
 }
 
 .proactive-events {
@@ -531,9 +557,10 @@
 }
 
 @media (max-width: 860px) {
-  .proactive-layout {
-    grid-template-columns: 1fr;
-  }
+  .proactive-card > .form-grid.compact,
+  .proactive-time-grid,
+  .toggle-row,
+  .greeting-grid,
   .reminder-editor {
     grid-template-columns: 1fr;
   }

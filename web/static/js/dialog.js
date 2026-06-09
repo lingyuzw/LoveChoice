@@ -206,7 +206,20 @@ export function clearTranscript() {
   state.currentAssistant = null;
 }
 function scrollTranscript() { const t = $("#transcript"); if (t) t.scrollTop = t.scrollHeight; }
-function renderTranscript(msgs) { clearTranscript(); for (const m of msgs) { if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || "", m); } }
+function scrollTranscriptSoon() {
+  scrollTranscript();
+  requestAnimationFrame(() => {
+    scrollTranscript();
+    window.setTimeout(scrollTranscript, 80);
+  });
+}
+function renderTranscript(msgs) {
+  clearTranscript();
+  for (const m of msgs) {
+    if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || "", m);
+  }
+  scrollTranscriptSoon();
+}
 
 /* ---- conversation ---- */
 
