@@ -220,15 +220,15 @@ function renderServiceCards() {
 
 function createServiceCard(service) {
   const card = document.createElement("article");
-  const healthOk = service.health?.ok;
-  const stateClass = healthOk === false ? "failed" : service.running ? "active" : "";
+  const runtimeState = serviceState(service);
+  const stateClass = serviceStateClass(runtimeState);
   card.className = `service-card ${stateClass}`;
   card.dataset.serviceCard = service.id;
 
-  const healthPayload = service.health?.payload || {};
-  const loading = service.running && healthPayload.ready === false && healthPayload.status === "loading";
-  const stateLabel = healthOk === false ? "Failed" : loading ? "Loading" : service.external ? "External" : service.running ? "Running" : "Stopped";
-  const health = healthPayload.ready === false ? "Loading" : service.health ? (service.health.ok ? "OK" : "Fail") : "--";
+  const healthPayload = normalizedHealthPayload(service);
+  const stateLabel = serviceStateLabel(runtimeState, service);
+  const health = serviceHealthLabel(service, healthPayload);
+  const warmup = warmupLabel(service.warmup, healthPayload);
   const pid = service.external ? "external" : service.pid || "--";
   const port = safePort(service.health_url);
 
@@ -241,16 +241,16 @@ function createServiceCard(service) {
   const name = document.createElement("strong");
   name.textContent = service.label || service.id;
   const desc = document.createElement("small");
-  desc.textContent = healthPayload.ready === false && healthPayload.status ? `模型${healthPayload.status} · ${service.description || ""}` : service.description || "";
+  desc.textContent = serviceDescription(service, runtimeState, healthPayload);
   title.append(name, document.createElement("br"), desc);
   const badge = document.createElement("span");
-  badge.className = `service-badge ${healthOk === false ? "failed" : loading ? "loading" : service.running ? "running" : ""}`;
+  badge.className = `service-badge ${stateClass || "stopped"}`;
   badge.textContent = stateLabel;
   head.append(dot, title, badge);
 
   const meta = document.createElement("div");
   meta.className = "service-meta";
-  for (const [label, value] of [["HEALTH", health], ["PID", pid], ["PORT", port]]) {
+  for (const [label, value] of [["HEALTH", health], ["WARM", warmup], ["PID", pid], ["PORT", port]]) {
     const cell = document.createElement("div");
     cell.className = "meta-cell";
     const span = document.createElement("span");
@@ -272,6 +272,83 @@ function createServiceCard(service) {
   card.querySelector(".stop").addEventListener("click", () => handleStop(service.id));
   card.querySelector(".restart").addEventListener("click", () => handleRestart(service.id));
   return card;
+}
+
+function normalizedHealthPayload(service) {
+  const payload = service.health?.payload || {};
+  if (payload.detail && typeof payload.detail === "object") return { ...payload, ...payload.detail };
+  return payload;
+}
+
+function serviceState(service) {
+  if (service.state) return String(service.state);
+  const healthPayload = normalizedHealthPayload(service);
+  if (healthPayload.status === "warming") return "warming";
+  if (healthPayload.ready === false) return "starting";
+  if (service.health?.ok === false && !service.port_open) return "failed";
+  if (service.running) return "ready";
+  return "stopped";
+}
+
+function serviceStateClass(runtimeState) {
+  if (["ready", "running"].includes(runtimeState)) return "active";
+  if (["starting", "warming", "queued", "retrying"].includes(runtimeState)) return "loading";
+  if (runtimeState === "failed") return "failed";
+  return "";
+}
+
+function serviceStateLabel(runtimeState, service) {
+  const labels = {
+    ready: service.external ? "External" : "Ready",
+    running: "Running",
+    starting: "Starting",
+    warming: "Warming",
+    stopped: "Stopped",
+    failed: "Failed",
+  };
+  return labels[runtimeState] || runtimeState || "--";
+}
+
+function serviceHealthLabel(service, payload) {
+  if (payload.ready === false && payload.status) return payload.status;
+  if (!service.health) return "--";
+  if (service.health.ok) return "OK";
+  return service.error || service.health.error || "Fail";
+}
+
+function warmupLabel(warmup, payload = {}) {
+  if (!warmup && payload.ready === false && payload.status) return payload.status;
+  if (!warmup) return "--";
+  const labels = {
+    queued: "Queued",
+    warming: `Try ${warmup.attempt || 1}`,
+    retrying: `Retry ${warmup.attempt || 1}`,
+    ready: "Ready",
+    failed: "Failed",
+  };
+  return labels[warmup.state] || warmup.state || "--";
+}
+
+function serviceDescription(service, runtimeState, payload) {
+  const base = service.description || "";
+  if (service.warmup?.state === "retrying" && service.warmup?.error) {
+    return `预热重试中：${shortText(service.warmup.error, 48)}`;
+  }
+  if (service.warmup?.state === "failed" && service.warmup?.error) {
+    return `预热失败：${shortText(service.warmup.error, 48)}`;
+  }
+  if (payload.ready === false && payload.status) {
+    return `模型${payload.status} · ${base}`;
+  }
+  if (runtimeState === "starting") return `服务启动中 · ${base}`;
+  if (runtimeState === "warming") return `模型预热中 · ${base}`;
+  if (runtimeState === "failed" && service.error) return `异常：${shortText(service.error, 56)}`;
+  return base;
+}
+
+function shortText(value, length) {
+  const text = String(value || "");
+  return text.length > length ? `${text.slice(0, length - 3)}...` : text;
 }
 
 function serviceActionButton(className, icon, label) {

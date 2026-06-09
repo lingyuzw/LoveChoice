@@ -64,6 +64,7 @@ function handleDialogEvent(data) {
     case "conversation": applyConversation(data.conversation, true); break;
     case "conversation_saved": applyConversation(data.conversation, false); break;
     case "settings": state.currentConfig = { ...state.currentConfig, ...(data.settings || {}) }; state.ttsEnabled = state.currentConfig.tts_enabled ?? true; break;
+    case "trace": handleTrace(data); break;
     case "status": handleStatus(data); break;
     case "vad_start": state.busy = false; setText("vadLabel", "speech"); setText("topStatus", "收音"); pipeline("vad", "正在听"); break;
     case "vad_end": setText("vadLabel", `${data.duration_ms || 0}ms`); setText("topStatus", "识别"); pipeline("asr", "识别中"); state.busy = true; break;
@@ -93,7 +94,13 @@ function handleDialogEvent(data) {
   }
 }
 
+function handleTrace(data) {
+  state.currentTraceId = data.trace_id || "";
+  setText("traceMetric", state.currentTraceId ? state.currentTraceId.slice(-10) : "--");
+}
+
 function handleStatus(data) {
+  if (data.trace_id && data.trace_id !== state.currentTraceId) handleTrace(data);
   const stage = data.stage || "idle";
   const label = statusLabel(data.label || data.status || "");
   if (stage === "vad" && data.device) setText("vadLabel", String(data.device));
@@ -116,6 +123,7 @@ function pipeline(stage = "idle", label = "") {
 }
 
 function setMetric(name, value) {
+  if (state.currentTraceId) setText("traceMetric", state.currentTraceId.slice(-10));
   const text = Number.isFinite(Number(value)) ? `${value}ms` : "--";
   if (name === "asr_ms") setText("asrMetric", text);
   if (name === "llm_first_token_ms") setText("llmMetric", text);

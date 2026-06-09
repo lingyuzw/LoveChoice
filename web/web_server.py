@@ -7,6 +7,7 @@ import os
 import re
 import contextlib
 import time
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 
@@ -61,6 +62,7 @@ GLOBAL_TTS_LOCK = asyncio.Lock()
 SERVICE_WARMUP_LOCK = asyncio.Lock()
 SERVICE_WARMUP_TASKS: dict[str, asyncio.Task] = {}
 SERVICE_WARMUP_DONE: set[str] = set()
+SERVICE_WARMUP_STATUS: dict[str, dict] = {}
 LOCALHOST_NAMES = {"127.0.0.1", "::1", "localhost"}
 
 # TTS output from the local CosyVoice endpoint is expected to be raw PCM16LE.
@@ -106,41 +108,106 @@ def require_local_service_control(request: Request) -> None:
     )
 
 
+def service_warmup_key(service_id: str, settings: SessionSettings) -> str:
+    if service_id == "asr":
+        return f"asr:{settings.asr_url}:{settings.asr_model}"
+    if service_id == "llm":
+        return f"llm:{settings.llm_url}:{settings.llm_model}"
+    return service_id
+
+
+def set_warmup_status(
+    service_id: str,
+    key: str,
+    state: str,
+    *,
+    attempt: int = 0,
+    error: str = "",
+) -> None:
+    SERVICE_WARMUP_STATUS[service_id] = {
+        "service": service_id,
+        "key": key,
+        "state": state,
+        "attempt": attempt,
+        "error": error,
+        "updated_at": time.time(),
+    }
+
+
+def warmup_statuses() -> dict:
+    return {service_id: dict(status) for service_id, status in SERVICE_WARMUP_STATUS.items()}
+
+
+def clear_warmup_status(service_id: str | None = None) -> None:
+    service_ids = {service_id} if service_id else {"asr", "llm"}
+    for sid in service_ids:
+        SERVICE_WARMUP_STATUS.pop(sid, None)
+
+    for key, task in list(SERVICE_WARMUP_TASKS.items()):
+        if any(key.startswith(f"{sid}:") for sid in service_ids):
+            task.cancel()
+            SERVICE_WARMUP_TASKS.pop(key, None)
+
+    for key in list(SERVICE_WARMUP_DONE):
+        if any(key.startswith(f"{sid}:") for sid in service_ids):
+            SERVICE_WARMUP_DONE.discard(key)
+
+
+def attach_service_warmups(services: list[dict]) -> list[dict]:
+    statuses = warmup_statuses()
+    for service in services:
+        warmup = statuses.get(service.get("id"))
+        if not warmup:
+            continue
+        service["warmup"] = warmup
+        if warmup.get("state") in {"queued", "warming", "retrying"} and service.get("state") == "ready":
+            service["state"] = "warming"
+    return services
+
+
 async def schedule_service_warmups(settings: SessionSettings) -> None:
     settings_snapshot = SessionSettings(**asdict(settings))
     warmups = [
         (
-            f"asr:{settings_snapshot.asr_url}:{settings_snapshot.asr_model}",
+            "asr",
+            service_warmup_key("asr", settings_snapshot),
             lambda s=settings_snapshot: warmup_asr(s),
         ),
         (
-            f"llm:{settings_snapshot.llm_url}:{settings_snapshot.llm_model}",
+            "llm",
+            service_warmup_key("llm", settings_snapshot),
             lambda s=settings_snapshot: warmup_llm(s),
         ),
     ]
     async with SERVICE_WARMUP_LOCK:
-        for key, warmup_factory in warmups:
+        for service_id, key, warmup_factory in warmups:
             if key in SERVICE_WARMUP_DONE:
+                set_warmup_status(service_id, key, "ready")
                 continue
             task = SERVICE_WARMUP_TASKS.get(key)
             if task and not task.done():
                 continue
-            SERVICE_WARMUP_TASKS[key] = asyncio.create_task(run_service_warmup(key, warmup_factory))
+            set_warmup_status(service_id, key, "queued")
+            SERVICE_WARMUP_TASKS[key] = asyncio.create_task(run_service_warmup(service_id, key, warmup_factory))
 
 
-async def run_service_warmup(key: str, warmup_factory) -> None:
+async def run_service_warmup(service_id: str, key: str, warmup_factory) -> None:
     last_error: Exception | None = None
     try:
-        for attempt in range(12):
+        for attempt in range(1, 13):
             try:
+                set_warmup_status(service_id, key, "warming", attempt=attempt)
                 await warmup_factory()
                 SERVICE_WARMUP_DONE.add(key)
+                set_warmup_status(service_id, key, "ready", attempt=attempt)
                 return
             except Exception as exc:
                 last_error = exc
-                if attempt < 11:
+                set_warmup_status(service_id, key, "retrying", attempt=attempt, error=str(exc))
+                if attempt < 12:
                     await asyncio.sleep(5)
         if last_error:
+            set_warmup_status(service_id, key, "failed", attempt=12, error=str(last_error))
             print(f"[warmup] {key} failed: {last_error}", flush=True)
     finally:
         SERVICE_WARMUP_TASKS.pop(key, None)
@@ -156,8 +223,8 @@ async def warmup_llm(settings: SessionSettings) -> None:
     payload = {
         "model": settings.llm_model,
         "messages": [
-            {"role": "system", "content": "只回复一个字。"},
-            {"role": "user", "content": "热身"},
+            {"role": "system", "content": "Reply with exactly one short token."},
+            {"role": "user", "content": "warmup"},
         ],
         "stream": False,
         "temperature": 0.0,
@@ -267,11 +334,12 @@ def create_app(args) -> FastAPI:
         return {
             "vad": {"ok": True, "device": app.state.vad_store.device},
             "services": [item for item in checks if isinstance(item, dict)],
+            "warmups": warmup_statuses(),
         }
 
     @app.get("/api/services")
     async def services():
-        return {"services": await app.state.service_manager.status_all()}
+        return {"services": attach_service_warmups(await app.state.service_manager.status_all())}
 
     @app.get("/api/system/resources")
     async def system_resources():
@@ -283,11 +351,12 @@ def create_app(args) -> FastAPI:
         overrides = (payload or {}).get("services") or {}
         services = await app.state.service_manager.start_all(overrides)
         await schedule_service_warmups(app.state.settings)
-        return {"services": services}
+        return {"services": attach_service_warmups(services)}
 
     @app.post("/api/services/stop-all")
     async def stop_all_services(request: Request):
         require_local_service_control(request)
+        clear_warmup_status()
         return {"services": await app.state.service_manager.stop_all()}
 
     @app.post("/api/services/{service_id}/start")
@@ -296,11 +365,13 @@ def create_app(args) -> FastAPI:
         service = await app.state.service_manager.start(service_id)
         if service_id in {"asr", "llm"}:
             await schedule_service_warmups(app.state.settings)
+        service = attach_service_warmups([service])[0]
         return {"service": service}
 
     @app.post("/api/services/{service_id}/stop")
     async def stop_service(service_id: str, request: Request):
         require_local_service_control(request)
+        clear_warmup_status(service_id)
         service = await app.state.service_manager.stop(service_id)
         return {"service": service}
 
@@ -395,6 +466,7 @@ class DialogSession:
         self.tts_pcm_pending = b""
         self.tts_pcm_tail = np.array([], dtype=np.int16)
         self.tts_pcm_started = False
+        self.current_trace_id = ""
 
     async def run(self) -> None:
         # Preload VAD in the background. Text-only chat should keep working
@@ -426,6 +498,25 @@ class DialogSession:
     def consume_background_task_exception(task: asyncio.Task) -> None:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             task.result()
+
+    def begin_trace(self, source: str) -> str:
+        trace_id = f"{int(time.time() * 1000):x}-{uuid.uuid4().hex[:6]}"
+        self.current_trace_id = trace_id
+        self.trace_log(trace_id, f"start source={source} conversation={self.conversation.get('id')}")
+        return trace_id
+
+    def trace_log(self, trace_id: str, message: str) -> None:
+        if not trace_id:
+            return
+        safe_message = " ".join(str(message).split())
+        print(f"[dialog:{trace_id}] {safe_message}", flush=True)
+
+    def finish_trace(self, trace_id: str, status: str = "done") -> None:
+        if not trace_id:
+            return
+        self.trace_log(trace_id, f"finish status={status}")
+        if self.current_trace_id == trace_id:
+            self.current_trace_id = ""
 
     async def handle_text_message(self, raw: str) -> None:
         try:
@@ -538,28 +629,39 @@ class DialogSession:
         # because Qwen3-ASR service endpoints expect file-like audio input.
         self.processing = True
         dialog_started = False
+        trace_id = self.begin_trace("voice")
+        await self.send_event("trace", trace_id=trace_id, source="voice")
         try:
             wav_bytes = wav_bytes_from_float32(audio)
             start = time.perf_counter()
             await self.send_event("status", stage="asr", label="running")
+            self.trace_log(trace_id, f"asr:start samples={audio.size} wav_bytes={len(wav_bytes)}")
             user_text = await transcribe_audio(self.settings, wav_bytes)
             elapsed_ms = int((time.perf_counter() - start) * 1000)
+            self.trace_log(trace_id, f"asr:done ms={elapsed_ms} text_len={len(user_text)}")
             await self.send_event("metric", name="asr_ms", value=elapsed_ms)
             await self.send_event("asr", text=user_text)
             if user_text:
                 dialog_started = True
-                await self.process_user_text(user_text, source="voice")
+                await self.process_user_text(user_text, source="voice", trace_id=trace_id)
         except Exception as exc:
+            self.trace_log(trace_id, f"asr:error {exc}")
             await self.send_event("error", message=f"ASR failed: {exc}")
         finally:
             self.processing = False
             if not dialog_started:
                 await self.send_event("turn_done")
+                self.finish_trace(trace_id, "asr_empty_or_failed")
 
-    async def process_user_text(self, user_text: str, source: str) -> None:
+    async def process_user_text(self, user_text: str, source: str, trace_id: str | None = None) -> None:
         if self.processing and source == "text":
             await self.send_event("busy")
             return
+
+        trace_id = trace_id or self.begin_trace(source)
+        self.current_trace_id = trace_id
+        await self.send_event("trace", trace_id=trace_id, source=source)
+        self.trace_log(trace_id, f"user source={source} text_len={len(user_text)}")
 
         old_processing = self.processing
         self.processing = True
@@ -572,6 +674,7 @@ class DialogSession:
             if repeat_text:
                 # "跟着我说..." should be spoken exactly. Bypassing the LLM
                 # avoids instruction drift and removes one latency source.
+                self.trace_log(trace_id, f"repeat:direct text_len={len(repeat_text)}")
                 await self.send_event("assistant_start")
                 await self.send_event("llm_delta", text=repeat_text)
                 await self.stream_direct_tts(repeat_text)
@@ -598,7 +701,9 @@ class DialogSession:
             await self.send_event("assistant_start")
             full_answer = ""
             try:
+                self.trace_log(trace_id, "llm:start")
                 full_answer = await self.stream_llm(request_messages, text_queue)
+                self.trace_log(trace_id, f"llm:done answer_len={len(full_answer)}")
             finally:
                 await text_queue.put(END)
                 try:
@@ -616,10 +721,12 @@ class DialogSession:
                 await self.remember_turn_safely(user_text, full_answer)
             self.trim_history()
         except Exception as exc:
+            self.trace_log(trace_id, f"dialog:error {exc}")
             await self.send_event("error", message=f"Dialog failed: {exc}")
         finally:
             self.processing = old_processing
             await self.send_event("turn_done")
+            self.finish_trace(trace_id)
 
     async def remember_turn_safely(self, user_text: str, assistant_text: str) -> None:
         try:
@@ -815,7 +922,9 @@ class DialogSession:
                         continue
 
                     if first_token:
-                        await self.send_event("metric", name="llm_first_token_ms", value=int((time.perf_counter() - started) * 1000))
+                        elapsed_ms = int((time.perf_counter() - started) * 1000)
+                        self.trace_log(self.current_trace_id, f"llm:first_token ms={elapsed_ms}")
+                        await self.send_event("metric", name="llm_first_token_ms", value=elapsed_ms)
                         first_token = False
 
                     full_answer += text
@@ -872,6 +981,7 @@ class DialogSession:
         # calls that can produce garbled "啊啊啊" audio or NoneType failures.
         async with GLOBAL_TTS_LOCK:
             await self.send_event("tts_segment", text=text)
+            self.trace_log(self.current_trace_id, f"tts:start text_len={len(text)}")
             payload = {
                 "text": text,
                 "stream": True,
@@ -890,7 +1000,9 @@ class DialogSession:
                             if not chunk:
                                 continue
                             if first_audio:
-                                await self.send_event("metric", name="tts_first_audio_ms", value=int((time.perf_counter() - started) * 1000))
+                                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                                self.trace_log(self.current_trace_id, f"tts:first_audio ms={elapsed_ms}")
+                                await self.send_event("metric", name="tts_first_audio_ms", value=elapsed_ms)
                                 await self.send_event("audio_format", sample_rate=self.settings.tts_sample_rate, channels=1, format="pcm_s16le")
                                 first_audio = False
 
@@ -903,6 +1015,7 @@ class DialogSession:
                         await self.send_audio(tail)
 
             except httpx.ConnectError as exc:
+                self.trace_log(self.current_trace_id, f"tts:connect_error {exc}")
                 await self.send_event(
                     "error",
                     message=(
@@ -912,6 +1025,7 @@ class DialogSession:
                     ),
                 )
             except httpx.HTTPStatusError as exc:
+                self.trace_log(self.current_trace_id, f"tts:http_error status={exc.response.status_code}")
                 detail = ""
                 with contextlib.suppress(Exception):
                     detail_data = exc.response.json()
@@ -924,8 +1038,10 @@ class DialogSession:
                     message=f"CosyVoice3 TTS 返回 HTTP {exc.response.status_code}：请查看 tts 日志。",
                 )
             except httpx.HTTPError as exc:
+                self.trace_log(self.current_trace_id, f"tts:http_error {exc}")
                 await self.send_event("error", message=f"CosyVoice3 TTS 请求失败：{exc}")
             finally:
+                self.trace_log(self.current_trace_id, "tts:finish")
                 self.reset_tts_pcm_state()
 
     def reset_tts_pcm_state(self) -> None:
@@ -994,7 +1110,10 @@ class DialogSession:
     def tts_fade_samples(self) -> int:
         fade_ms = max(0, int(self.settings.tts_fade_ms))
         return int(self.settings.tts_sample_rate * fade_ms / 1000)
+
     async def send_event(self, event_type: str, **payload) -> None:
+        if self.current_trace_id and "trace_id" not in payload:
+            payload["trace_id"] = self.current_trace_id
         payload["type"] = event_type
         async with self.send_lock:
             # Serialize WebSocket sends: FastAPI/Starlette does not allow

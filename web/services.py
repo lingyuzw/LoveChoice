@@ -111,30 +111,42 @@ class ServiceManager:
         health_url = service.get("health_url", "")
         health = await check_service(service_id, health_url) if health_url else None
         tracked_running = False
+        tracked_pid = getattr(process, "pid", None) if process else None
         if process is not None:
             tracked_running = _safe_poll(process) is None
         if not tracked_running:
-            pid = getattr(process, "pid", None) or self._read_service_pid(service_id)
-            tracked_running = bool(pid and _is_pid_alive(pid))
+            tracked_pid = tracked_pid or self._read_service_pid(service_id)
+            tracked_running = bool(tracked_pid and _is_pid_alive(tracked_pid))
         port_open = is_tcp_port_open(health_url)
         external_running = bool(health and health.get("ok")) or port_open
         running = tracked_running or external_running
+        returncode = None if running or process is None else _safe_poll(process)
+        runtime_state = service_runtime_state(
+            running=running,
+            tracked_running=tracked_running,
+            health=health,
+            port_open=port_open,
+            returncode=returncode,
+        )
 
-        if not tracked_running and external_running:
-            pid = self._read_service_pid(service_id)
-            if pid and _is_pid_alive(pid) and service_id not in self.processes:
-                proc = _create_virtual_process(pid)
+        if (tracked_running or external_running) and process is None:
+            tracked_pid = tracked_pid or self._read_service_pid(service_id)
+            if tracked_pid and _is_pid_alive(tracked_pid) and service_id not in self.processes:
+                proc = _create_virtual_process(tracked_pid)
                 if proc:
                     self.processes[service_id] = proc
+                    process = proc
 
         return {
             "id": service_id,
             **service,
             "running": running,
+            "state": runtime_state,
+            "error": service_runtime_error(health, returncode),
             "external": external_running and not tracked_running,
             "port_open": port_open,
-            "pid": process.pid if tracked_running and process else None,
-            "returncode": None if running or process is None else _safe_poll(process),
+            "pid": tracked_pid if tracked_running else None,
+            "returncode": returncode,
             "started_at": self.started_at.get(service_id),
             "log_file": str(self.log_files.get(service_id, "")),
             "health": health,
@@ -323,6 +335,59 @@ def load_service_profiles(config_path: Path | None) -> dict:
             if service_id in profiles and isinstance(service_patch, dict):
                 profiles[service_id].update(service_patch)
     return profiles
+
+
+def service_runtime_state(
+    *,
+    running: bool,
+    tracked_running: bool,
+    health: dict | None,
+    port_open: bool,
+    returncode: int | None,
+) -> str:
+    payload = normalized_health_payload(health)
+    model_status = str(payload.get("status") or "").lower()
+    ready = payload.get("ready")
+
+    if model_status in {"loading", "warming", "starting"}:
+        return "warming" if model_status == "warming" else "starting"
+    if ready is False:
+        return "starting"
+    if model_status == "error":
+        return "failed"
+    if health and health.get("ok"):
+        return "ready"
+    if health and health.get("ok") is False and not port_open:
+        return "failed"
+    if running or tracked_running or port_open:
+        return "starting"
+    if returncode is not None:
+        return "failed"
+    return "stopped"
+
+
+def service_runtime_error(health: dict | None, returncode: int | None) -> str:
+    payload = normalized_health_payload(health)
+    error = payload.get("error") or (health or {}).get("error")
+    if error:
+        return str(error)
+    if health and health.get("ok") is False and health.get("status"):
+        return f"HTTP {health.get('status')}"
+    if returncode is not None:
+        return f"exit {returncode}"
+    return ""
+
+
+def normalized_health_payload(health: dict | None) -> dict:
+    payload = (health or {}).get("payload") or {}
+    if not isinstance(payload, dict):
+        return {}
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        merged = dict(payload)
+        merged.update(detail)
+        return merged
+    return payload
 
 
 def tune_start_command(service_id: str, command: str) -> str:

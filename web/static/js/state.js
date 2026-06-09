@@ -123,6 +123,7 @@ export const state = {
   bargeInFrames: 0,
   lastInterruptAt: 0,
   currentAssistant: null,
+  currentTraceId: "",
 
   /* visualization */
   levels: Array.from({ length: 110 }, () => 0),
