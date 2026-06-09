@@ -283,6 +283,33 @@ const PROVIDER_LABELS = {
   reminder: "提醒通知",
 };
 
+const PROVIDER_OPTIONS = {
+  weather: [
+    ["wttr", "wttr.in 免密天气"],
+    ["gaode", "高德天气"],
+  ],
+  search: [
+    ["duckduckgo", "DuckDuckGo 网页搜索"],
+    ["gaode", "高德地点搜索"],
+  ],
+  news: [
+    ["google_rss", "Google News RSS"],
+    ["search", "网页搜索兜底"],
+  ],
+  finance: [
+    ["search", "网页搜索兜底"],
+  ],
+  map: [
+    ["gaode", "高德地图 Web服务"],
+  ],
+  url_fetch: [
+    ["built-in", "内置网页读取"],
+  ],
+  reminder: [
+    ["default", "内置提醒"],
+  ],
+};
+
 function renderToolProviders() {
   const host = $("#toolProviderGrid");
   if (!host) return;
@@ -347,9 +374,13 @@ function openToolProviderModal(key) {
       const span = document.createElement("span");
       span.textContent = fieldLabel(field);
       const current = provider[field];
-      const input = document.createElement(field === "enabled" || field.endsWith("_enabled") ? "select" : "input");
+      const input = document.createElement(field === "enabled" || field.endsWith("_enabled") || field === "provider" ? "select" : "input");
       input.dataset.providerField = field;
-      if (input.tagName === "SELECT") {
+      if (field === "provider") {
+        const options = PROVIDER_OPTIONS[key] || [["default", "默认"]];
+        input.innerHTML = options.map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`).join("");
+        input.value = String(current || options[0]?.[0] || "default");
+      } else if (input.tagName === "SELECT") {
         input.innerHTML = `<option value="true">启用</option><option value="false">关闭</option>`;
         input.value = String(current ?? true);
       } else {
@@ -370,12 +401,36 @@ function applyToolProviderModal() {
   const next = { ...(toolProviderDraft[editingToolProvider] || {}) };
   document.querySelectorAll("#toolProviderModalFields [data-provider-field]").forEach((input) => {
     const field = input.dataset.providerField;
-    if (input.tagName === "SELECT") next[field] = input.value === "true";
+    if (field === "provider") next[field] = input.value;
+    else if (input.tagName === "SELECT") next[field] = input.value === "true";
     else if (input.value.trim()) next[field] = input.value.trim();
   });
+  applyProviderDefaults(editingToolProvider, next);
   toolProviderDraft[editingToolProvider] = next;
   closeToolProviderModal();
   renderToolProviders();
+}
+
+function applyProviderDefaults(key, next) {
+  if (key === "weather") {
+    if (next.provider === "gaode" && (!next.base_url || next.base_url === "https://wttr.in")) {
+      next.base_url = "https://restapi.amap.com/v3";
+    }
+    if (next.provider === "wttr" && (!next.base_url || next.base_url === "https://restapi.amap.com/v3")) {
+      next.base_url = "https://wttr.in";
+    }
+  }
+  if (key === "search") {
+    if (next.provider === "gaode" && (!next.base_url || next.base_url === "https://duckduckgo.com/html/")) {
+      next.base_url = "https://restapi.amap.com/v3";
+    }
+    if (next.provider === "duckduckgo" && (!next.base_url || next.base_url === "https://restapi.amap.com/v3")) {
+      next.base_url = "https://duckduckgo.com/html/";
+    }
+  }
+  if (key === "map" && next.provider === "gaode" && !next.base_url) {
+    next.base_url = "https://restapi.amap.com/v3";
+  }
 }
 
 function closeToolProviderModal() {

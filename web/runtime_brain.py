@@ -788,6 +788,40 @@ def normalize_result_url(url: str) -> str:
     return ""
 
 
+def provider_name(provider: dict | None) -> str:
+    return str((provider or {}).get("provider") or "").strip().lower()
+
+
+def gaode_base_url(provider: dict | None) -> str:
+    return str((provider or {}).get("base_url") or "https://restapi.amap.com/v3").rstrip("/")
+
+
+def gaode_api_key(providers: dict | None, primary: str = "map") -> str:
+    providers = providers or {}
+    for key in (primary, "map", "weather", "search"):
+        value = str((providers.get(key) or {}).get("api_key") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def parse_coordinate_pair(text: str) -> str:
+    match = re.search(r"(-?\d{2,3}\.\d+)\s*[,，]\s*(-?\d{1,2}\.\d+)", text)
+    if not match:
+        return ""
+    return f"{match.group(1)},{match.group(2)}"
+
+
+def clean_place_query(text: str) -> str:
+    cleaned = re.sub(
+        r"(地图|地址|位置|在哪(?:里)?|在哪里|附近|周边|路线|导航|怎么走|距离|查一下|帮我查|搜索|找一下|请问)",
+        " ",
+        str(text or ""),
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ，。？?、")
+    return cleaned or compact_text(text, 80)
+
+
 class ToolManager:
     BUILTIN_TOOLS = [
         {
@@ -908,9 +942,12 @@ class ToolManager:
 
     def builtin_specs(self, include_disabled: bool = False, config: dict | None = None) -> list[dict]:
         config = config or self.load_config()
+        providers = self.providers()
         specs = []
         for spec in self.BUILTIN_TOOLS:
             enabled = bool((config.get("builtins") or {}).get(spec["id"], {}).get("enabled", True))
+            if spec["id"] == "map" and (providers.get("map") or {}).get("enabled", False):
+                enabled = True
             if enabled or include_disabled:
                 specs.append({**spec, "enabled": enabled, "builtin": True})
         return specs
@@ -1004,6 +1041,8 @@ class ToolManager:
         provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("search", {})
         if not provider.get("enabled", True):
             return {"ok": False, "error": "search tool is disabled", "results": []}
+        if provider_name(provider) in {"gaode", "amap"}:
+            return await self.gaode_place_search(query, limit, timeout, providers, provider_key="search")
         limit = max(1, min(10, limit))
         url = str(provider.get("base_url") or "https://duckduckgo.com/html/")
         headers = {"User-Agent": str((providers or {}).get("url_fetch", {}).get("user_agent") or "Mozilla/5.0 BranchWhisper/1.0")}
@@ -1067,7 +1106,9 @@ class ToolManager:
         if not provider.get("enabled", True):
             return {"ok": False, "error": "weather tool is disabled"}
         location = location.strip() or str(provider.get("default_location") or "北京")
-        if provider.get("provider") != "wttr":
+        if provider_name(provider) in {"gaode", "amap"}:
+            return await self.gaode_weather(location, timeout, providers)
+        if provider_name(provider) != "wttr":
             return {"ok": False, "error": f"weather provider {provider.get('provider')} is not implemented yet"}
         base_url = str(provider.get("base_url") or "https://wttr.in").rstrip("/")
         url = f"{base_url}/{quote(location)}"
@@ -1095,10 +1136,220 @@ class ToolManager:
         provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers or {}).get("map", {})
         if not provider.get("enabled", False):
             return {"ok": False, "error": "map tool is disabled; configure a provider first"}
-        api_key = str(provider.get("api_key") or "").strip()
+        if provider_name(provider) not in {"gaode", "amap"}:
+            return {"ok": False, "error": f"map provider {provider.get('provider')} is not implemented yet", "query": query}
+        api_key = gaode_api_key(providers, "map")
         if not api_key:
             return {"ok": False, "error": "map api_key is not configured"}
-        return {"ok": False, "error": "map provider is configured but route/place lookup is not implemented in this build", "query": query}
+        return await self.gaode_map_query(query, timeout, providers)
+
+    async def gaode_weather(self, location: str, timeout: float, providers: dict | None = None) -> dict:
+        providers = providers or {}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers).get("weather", {})
+        api_key = gaode_api_key(providers, "weather")
+        if not api_key:
+            return {"ok": False, "error": "gaode weather api_key is not configured"}
+        base_url = gaode_base_url(provider)
+        city = await self.gaode_city_adcode(location, timeout, providers) or location
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{base_url}/weather/weatherInfo",
+                params={"key": api_key, "city": city, "extensions": "base", "output": "JSON"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return {"ok": False, "tool": "weather", "provider": "gaode", "error": data.get("info") or "gaode weather failed", "raw": data}
+        live = (data.get("lives") or [{}])[0]
+        area = live.get("city") or live.get("province") or location
+        return {
+            "ok": True,
+            "tool": "weather",
+            "provider": "gaode",
+            "location": location,
+            "area": area,
+            "report_time": live.get("reporttime") or "",
+            "current": {
+                "temp_c": live.get("temperature"),
+                "feels_like_c": "",
+                "humidity": live.get("humidity"),
+                "weather": live.get("weather") or "",
+                "wind_direction": live.get("winddirection") or "",
+                "wind_power": live.get("windpower") or "",
+            },
+        }
+
+    async def gaode_map_query(self, query: str, timeout: float, providers: dict | None = None) -> dict:
+        text = str(query or "").strip()
+        coordinate = parse_coordinate_pair(text)
+        if coordinate and re.search(r"(逆地理|附近|周边|地址|位置)", text):
+            return await self.gaode_regeo(coordinate, timeout, providers)
+        if re.search(r"(驾车|开车|行车|自驾|步行|走路|路线|导航|怎么走|到)", text):
+            route = await self.gaode_route_query(text, timeout, providers)
+            if route.get("ok"):
+                return route
+        query_text = clean_place_query(text)
+        if re.search(r"(地理编码|经纬度|坐标)", text) and not re.search(r"(附近|周边|搜索)", text):
+            geo = await self.gaode_geocode(query_text, timeout, providers)
+            if geo.get("ok"):
+                return geo
+        return await self.gaode_place_search(query_text, 6, timeout, providers, provider_key="map")
+
+    async def gaode_city_adcode(self, location: str, timeout: float, providers: dict | None = None) -> str:
+        geo = await self.gaode_geocode(location, timeout, providers, include_raw=False)
+        items = geo.get("results") or []
+        if items:
+            return str(items[0].get("adcode") or "")
+        return ""
+
+    async def gaode_geocode(self, address: str, timeout: float, providers: dict | None = None, include_raw: bool = True) -> dict:
+        providers = providers or {}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers).get("map", {})
+        api_key = gaode_api_key(providers, "map")
+        if not api_key:
+            return {"ok": False, "tool": "map", "provider": "gaode", "error": "gaode api_key is not configured"}
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{gaode_base_url(provider)}/geocode/geo",
+                params={"key": api_key, "address": address, "output": "JSON"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return {"ok": False, "tool": "map", "provider": "gaode", "kind": "geocode", "error": data.get("info") or "gaode geocode failed"}
+        results = [
+            {
+                "formatted_address": item.get("formatted_address") or "",
+                "province": item.get("province") or "",
+                "city": item.get("city") or "",
+                "district": item.get("district") or "",
+                "adcode": item.get("adcode") or "",
+                "location": item.get("location") or "",
+            }
+            for item in (data.get("geocodes") or [])[:8]
+        ]
+        result = {"ok": True, "tool": "map", "provider": "gaode", "kind": "geocode", "query": address, "results": results}
+        if include_raw:
+            result["count"] = data.get("count") or len(results)
+        return result
+
+    async def gaode_regeo(self, location: str, timeout: float, providers: dict | None = None) -> dict:
+        providers = providers or {}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers).get("map", {})
+        api_key = gaode_api_key(providers, "map")
+        if not api_key:
+            return {"ok": False, "tool": "map", "provider": "gaode", "error": "gaode api_key is not configured"}
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{gaode_base_url(provider)}/geocode/regeo",
+                params={"key": api_key, "location": location, "extensions": "base", "output": "JSON"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return {"ok": False, "tool": "map", "provider": "gaode", "kind": "regeo", "error": data.get("info") or "gaode regeo failed"}
+        regeocode = data.get("regeocode") or {}
+        return {
+            "ok": True,
+            "tool": "map",
+            "provider": "gaode",
+            "kind": "regeo",
+            "location": location,
+            "formatted_address": regeocode.get("formatted_address") or "",
+            "address_component": regeocode.get("addressComponent") or {},
+        }
+
+    async def gaode_place_search(self, query: str, limit: int, timeout: float, providers: dict | None = None, provider_key: str = "map") -> dict:
+        providers = providers or {}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers).get(provider_key, {})
+        api_key = gaode_api_key(providers, provider_key)
+        if not api_key:
+            return {"ok": False, "tool": "web_search" if provider_key == "search" else "map", "provider": "gaode", "error": "gaode api_key is not configured", "results": []}
+        limit = max(1, min(20, int(limit or 6)))
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{gaode_base_url(provider)}/place/text",
+                params={"key": api_key, "keywords": query, "offset": limit, "page": 1, "extensions": "base", "output": "JSON"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return {"ok": False, "tool": "web_search" if provider_key == "search" else "map", "provider": "gaode", "kind": "place_search", "error": data.get("info") or "gaode place search failed", "results": []}
+        results = []
+        for item in (data.get("pois") or [])[:limit]:
+            address = item.get("address") or ""
+            pname = item.get("pname") or ""
+            cityname = item.get("cityname") or ""
+            adname = item.get("adname") or ""
+            results.append(
+                {
+                    "title": item.get("name") or "",
+                    "name": item.get("name") or "",
+                    "type": item.get("type") or "",
+                    "address": address if isinstance(address, str) else "",
+                    "area": "".join(x for x in [pname, cityname, adname] if isinstance(x, str)),
+                    "location": item.get("location") or "",
+                    "tel": item.get("tel") if isinstance(item.get("tel"), str) else "",
+                    "url": "",
+                }
+            )
+        return {
+            "ok": True,
+            "tool": "web_search" if provider_key == "search" else "map",
+            "provider": "gaode",
+            "kind": "place_search",
+            "query": query,
+            "count": data.get("count") or len(results),
+            "results": results,
+        }
+
+    async def gaode_route_query(self, query: str, timeout: float, providers: dict | None = None) -> dict:
+        parts = re.split(r"(?:到|去|至|->|→)", query, maxsplit=1)
+        if len(parts) < 2:
+            return {"ok": False, "tool": "map", "provider": "gaode", "kind": "route", "error": "需要起点和终点"}
+        origin_text = clean_place_query(parts[0])
+        destination_text = clean_place_query(parts[1])
+        origin = parse_coordinate_pair(origin_text) or await self.gaode_first_location(origin_text, timeout, providers)
+        destination = parse_coordinate_pair(destination_text) or await self.gaode_first_location(destination_text, timeout, providers)
+        if not origin or not destination:
+            return {"ok": False, "tool": "map", "provider": "gaode", "kind": "route", "error": "没有找到起点或终点坐标", "origin": origin_text, "destination": destination_text}
+        providers = providers or {}
+        provider = deep_merge(DEFAULT_TOOL_PROVIDER_CONFIG, providers).get("map", {})
+        api_key = gaode_api_key(providers, "map")
+        route_type = "walking" if re.search(r"(步行|走路)", query) else "driving"
+        path = "direction/walking" if route_type == "walking" else "direction/driving"
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{gaode_base_url(provider)}/{path}",
+                params={"key": api_key, "origin": origin, "destination": destination, "output": "JSON"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        if str(data.get("status")) != "1":
+            return {"ok": False, "tool": "map", "provider": "gaode", "kind": "route", "error": data.get("info") or "gaode route failed"}
+        route = data.get("route") or {}
+        path_item = (route.get("paths") or [{}])[0]
+        return {
+            "ok": True,
+            "tool": "map",
+            "provider": "gaode",
+            "kind": "route",
+            "route_type": route_type,
+            "origin": origin_text,
+            "destination": destination_text,
+            "distance_m": path_item.get("distance") or "",
+            "duration_s": path_item.get("duration") or "",
+            "steps": [
+                compact_text(step.get("instruction") or "", 120)
+                for step in (path_item.get("steps") or [])[:8]
+                if step.get("instruction")
+            ],
+        }
+
+    async def gaode_first_location(self, address: str, timeout: float, providers: dict | None = None) -> str:
+        geo = await self.gaode_geocode(address, timeout, providers, include_raw=False)
+        items = geo.get("results") or []
+        return str(items[0].get("location") or "") if items else ""
 
     async def custom_api(self, tool: dict, args: dict, timeout: float = 12) -> dict:
         method = str(tool.get("method") or "GET").upper()
