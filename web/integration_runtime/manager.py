@@ -192,9 +192,7 @@ def wav_bytes_from_pcm16(pcm: bytes, sample_rate: int) -> bytes:
 def format_reply_paragraphs(text: str) -> str:
     text = strip_reasoning_text(text)
     text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return text
-    return "\n".join(split_reply_messages(text, max_parts=4, max_chars=48)) or text
+    return text
 
 
 def split_reply_messages(text: str, *, max_parts: int = 4, max_chars: int = 60) -> list[str]:
@@ -1291,6 +1289,8 @@ class ExternalDialogEngine:
             return reply, None, "", 0, 0
 
         request_text = self.build_request_text(user_text, conversation)
+        if voice_requested:
+            request_text += "\n\n本轮任务：用户要听语音。请直接写一段会被朗读的自然内容，不要拒绝，不要说自己是文字 AI。"
         tool_started = time.perf_counter()
         tool_result = await self.maybe_execute_tool(settings, user_text)
         tool_ms = int((time.perf_counter() - tool_started) * 1000) if tool_result else 0
@@ -1329,7 +1329,7 @@ class ExternalDialogEngine:
             system_text += (
                 "\n\n本轮用户明确请求语音回复。系统会把你的回复转换成语音并发送，"
                 "你只需要自然输出要说出口的内容。不要说自己不能发语音，不要说只有打字形态，"
-                "不要解释技术实现，也不要拒绝。回复尽量口语化、短句。"
+                "不要说自己是文字 AI，不要说用户听不见，不要解释技术实现，也不要拒绝。回复尽量口语化、短句。"
             )
 
         recent_user = [compact_text(item.get("content", "")) for item in history[-6:] if item.get("role") == "user"]

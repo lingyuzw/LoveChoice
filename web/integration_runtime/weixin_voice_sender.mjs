@@ -114,25 +114,41 @@ function buildCdnUploadUrl({ cdnBaseUrl, uploadParam, filekey }) {
 
 async function uploadBufferToCdn({ buffer, uploadFullUrl, uploadParam, filekey, cdnBaseUrl, aeskey }) {
   const ciphertext = encryptAesEcb(buffer, aeskey);
-  const url = uploadFullUrl?.trim() || buildCdnUploadUrl({ cdnBaseUrl, uploadParam, filekey });
+  const urls = [];
+  if (uploadFullUrl?.trim()) urls.push(uploadFullUrl.trim());
+  if (uploadParam) urls.push(buildCdnUploadUrl({ cdnBaseUrl, uploadParam, filekey }));
+  if (!urls.length) throw new Error("CDN upload missing upload URL");
   let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const response = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: new Uint8Array(ciphertext),
-      });
-      if (response.status !== 200) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`CDN HTTP ${response.status}: ${body.slice(0, 180)}`);
+  for (const url of [...new Set(urls)]) {
+    const methods = url.includes("/upload?") ? ["POST", "PUT"] : ["PUT", "POST"];
+    for (const method of methods) {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/octet-stream" },
+            body: new Uint8Array(ciphertext),
+          });
+          if (response.status !== 200) {
+            const body = await response.text().catch(() => "");
+            const error = new Error(`CDN ${method} HTTP ${response.status}: ${body.slice(0, 180)}`);
+            error.status = response.status;
+            error.urlKind = url.includes("/upload?") ? "param" : "full";
+            throw error;
+          }
+          const downloadParam = response.headers.get("x-encrypted-param") || "";
+          if (!downloadParam) throw new Error(`CDN ${method} response missing x-encrypted-param`);
+          return {
+            downloadParam,
+            ciphertextSize: ciphertext.length,
+            uploadMethod: method,
+            uploadUrlKind: url.includes("/upload?") ? "param" : "full",
+          };
+        } catch (error) {
+          lastError = error;
+          if (attempt === 2 || error.status === 404 || error.status === 405) break;
+        }
       }
-      const downloadParam = response.headers.get("x-encrypted-param") || "";
-      if (!downloadParam) throw new Error("CDN response missing x-encrypted-param");
-      return { downloadParam, ciphertextSize: ciphertext.length };
-    } catch (error) {
-      lastError = error;
-      if (attempt === 3) break;
     }
   }
   throw lastError || new Error("CDN upload failed");
@@ -299,6 +315,8 @@ async function sendVoice(args) {
       playtime_ms: playtimeMs,
       raw_size: rawsize,
       cipher_size: upload.ciphertextSize,
+      upload_method: upload.uploadMethod,
+      upload_url_kind: upload.uploadUrlKind,
       upload_ms: uploadMs,
       send_ms: Date.now() - sendStart,
       total_ms: Date.now() - started,
