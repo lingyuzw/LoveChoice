@@ -76,17 +76,25 @@ function renderMemoryStats() {
   };
   host.innerHTML = "";
   host.append(
-    memoryStatCard("全部记忆", counts.total, "当前可用于上下文的记忆"),
-    memoryStatCard("短期", counts.short, "最近对话里的临时偏好"),
-    memoryStatCard("中期", counts.mid, "重复出现的稳定信息"),
-    memoryStatCard("长期", counts.long, "置顶或高置信信息"),
+    memoryStatCard("全部记忆", counts.total, "当前可用于上下文的记忆", ""),
+    memoryStatCard("短期", counts.short, "最近对话里的临时偏好", "short"),
+    memoryStatCard("中期", counts.mid, "重复出现的稳定信息", "mid"),
+    memoryStatCard("长期", counts.long, "置顶或高置信信息", "long"),
   );
 }
 
-function memoryStatCard(title, value, detail) {
-  const card = document.createElement("article");
-  card.className = "memory-stat-card";
+function memoryStatCard(title, value, detail, layer) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `memory-stat-card ${($("#memoryLayerFilter")?.value || "") === layer ? "active" : ""}`;
+  card.dataset.memoryLayer = layer;
   card.innerHTML = `<span>${title}</span><strong>${value}</strong><small>${detail}</small>`;
+  card.addEventListener("click", () => {
+    const select = $("#memoryLayerFilter");
+    if (select) select.value = layer;
+    state.memoryPage = 1;
+    renderMemoryPage();
+  });
   return card;
 }
 

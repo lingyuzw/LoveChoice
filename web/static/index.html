@@ -78,8 +78,10 @@
                 <h1>有什么我可以帮你的？</h1>
                 <p>打开麦克风开始语音对话，或输入文字发送消息</p>
               </div>
+              <div class="attachment-preview-strip" id="attachmentPreviewStripWelcome" hidden></div>
               <div class="composer welcome-composer">
                 <button class="voice-button" id="micBtnWelcome" type="button"><i data-lucide="mic"></i></button>
+                <button class="icon-button attach-image-btn" id="attachImageBtnWelcome" type="button" title="发送图片"><i data-lucide="image-plus"></i></button>
                 <textarea id="textInputWelcome" rows="1" autocomplete="off" placeholder="输入消息..."></textarea>
                 <button class="send-button" id="sendBtnWelcome" type="button"><i data-lucide="send"></i></button>
                 <button class="icon-button toggle-button" id="ttsToggleBtnWelcome" type="button" title="语音播报"><i data-lucide="volume-2"></i></button>
@@ -91,8 +93,10 @@
               <div class="transcript" id="transcript"></div>
             </div>
             <div class="chat-composer" id="chatComposer" style="display:none">
+              <div class="attachment-preview-strip" id="attachmentPreviewStrip" hidden></div>
               <div class="composer">
                 <button class="voice-button" id="micBtn" type="button"><i data-lucide="mic"></i></button>
+                <button class="icon-button attach-image-btn" id="attachImageBtn" type="button" title="发送图片"><i data-lucide="image-plus"></i></button>
                 <textarea id="textInput" rows="1" autocomplete="off" placeholder="输入消息..."></textarea>
                 <button class="send-button" id="sendBtn" type="button"><i data-lucide="send"></i></button>
                 <button class="icon-button toggle-button" id="ttsToggleBtn" type="button" title="语音播报"><i data-lucide="volume-2"></i></button>
@@ -100,6 +104,7 @@
                 <button class="icon-button" id="resetBtn" type="button" title="新对话"><i data-lucide="square-pen"></i></button>
               </div>
             </div>
+            <input class="visually-hidden" id="chatImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
           </section>
         </div>
       </main>
@@ -253,6 +258,7 @@
             <a data-setting-nav="appearance"><i data-lucide="palette"></i>外观</a>
             <a data-setting-nav="engine"><i data-lucide="cpu"></i>模型引擎</a>
             <a data-setting-nav="tools"><i data-lucide="globe-2"></i>联网工具</a>
+            <a data-setting-nav="dialogFeatures"><i data-lucide="images"></i>对话能力</a>
             <a data-setting-nav="proactive"><i data-lucide="sparkles"></i>主动性</a>
             <a data-setting-nav="botProfiles"><i data-lucide="bot"></i>Bot Profile</a>
             <a data-setting-nav="prompt"><i data-lucide="message-square-text"></i>Prompt</a>
@@ -264,6 +270,7 @@
           <section class="settings-content">
             <section class="settings-overview-grid" id="settingsOverviewGrid">
               <article class="settings-overview-card" data-open-config="proactive"><span><i data-lucide="sparkles"></i>主动性</span><strong id="proactiveSummary">默认关闭</strong><small>早安、提醒、主动追问</small><button class="secondary-action" type="button">配置</button></article>
+              <article class="settings-overview-card" data-open-config="dialogFeatures"><span><i data-lucide="images"></i>对话能力</span><strong id="dialogFeaturesSummary">图片 · 表情包</strong><small>图片理解、表情包、上下文压缩</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="botProfiles"><span><i data-lucide="bot"></i>Bot 人格</span><strong id="botProfileSummary">默认人格</strong><small>工具开关、风格、System Prompt</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="prompt"><span><i data-lucide="message-square-text"></i>Prompt</span><strong id="promptSummary">系统提示词</strong><small>主对话人格设定</small><button class="secondary-action" type="button">配置</button></article>
               <article class="settings-overview-card" data-open-config="tts"><span><i data-lucide="volume-2"></i>语音合成</span><strong id="ttsSummary">TTS</strong><small>速度、音量、采样率</small><button class="secondary-action" type="button">配置</button></article>
@@ -345,6 +352,52 @@
               </div>
               <pre class="tool-resolve-result" id="toolResolveResult">等待测试。</pre>
             </article>
+            <article class="settings-panel dialog-features-panel" id="dialogFeatures">
+              <div class="panel-head"><div><p class="eyebrow">Conversation Features</p><h2>对话能力</h2></div><span class="soft-badge">Web 优先</span></div>
+              <div class="dialog-feature-grid">
+                <section class="dialog-feature-card">
+                  <div class="appearance-card-head"><strong>图片理解</strong><small>发送图片后生成摘要并进入本轮上下文</small></div>
+                  <div class="form-grid compact">
+                    <label><span>启用</span><select id="visionEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
+                    <label><span>模型</span><input id="visionModel" type="text" placeholder="qwen-vl" /></label>
+                    <label class="wide"><span>Vision URL</span><input id="visionUrl" type="text" placeholder="http://127.0.0.1:8081/v1/chat/completions" /></label>
+                    <label><span>超时秒</span><input id="visionTimeout" type="number" min="5" max="180" step="1" /></label>
+                    <label><span>图片上限 MB</span><input id="visionMaxImageMb" type="number" min="1" max="30" step="1" /></label>
+                    <label><span>图片入记忆</span><select id="visionMemoryExtractEnabled"><option value="false">默认不记</option><option value="true">允许准入</option></select></label>
+                  </div>
+                </section>
+                <section class="dialog-feature-card">
+                  <div class="appearance-card-head"><strong>表情包</strong><small>按聊天气氛自动发送，可调得更活跃</small></div>
+                  <div class="form-grid compact">
+                    <label><span>启用</span><select id="stickersEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
+                    <label><span>活跃度</span><select id="stickerActivity"><option value="off">关闭</option><option value="low">低</option><option value="standard">标准</option><option value="active">活跃</option><option value="very_active">超活跃</option><option value="custom">自定义</option></select></label>
+                    <label><span>冷却秒</span><input id="stickerCooldownSec" type="number" min="0" max="3600" step="5" /></label>
+                    <label><span>每日上限</span><input id="stickerDailyLimit" type="number" min="0" max="300" step="1" /></label>
+                    <label><span>连续上限</span><input id="stickerMaxStreak" type="number" min="0" max="5" step="1" /></label>
+                    <label><span>自定义概率</span><input id="stickerCustomProbability" type="number" min="0" max="1" step="0.05" /></label>
+                  </div>
+                  <div class="sticker-library-panel">
+                    <div class="sticker-upload-row">
+                      <input class="visually-hidden" id="stickerFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                      <input id="stickerTagInput" type="text" placeholder="标签：开心 / 安慰 / 无语" />
+                      <button class="secondary-action" id="stickerUploadBtn" type="button"><i data-lucide="image-plus"></i>上传表情包</button>
+                    </div>
+                    <div class="sticker-library-list" id="stickerLibraryList"></div>
+                  </div>
+                </section>
+                <section class="dialog-feature-card wide">
+                  <div class="appearance-card-head"><strong>上下文压缩</strong><small>聊久后保留摘要和最近对话，减少遗忘与延迟</small></div>
+                  <div class="form-grid compact">
+                    <label><span>启用</span><select id="contextCompactionEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
+                    <label><span>窗口 Tokens</span><input id="contextWindowTokens" type="number" min="2048" max="262144" step="512" /></label>
+                    <label><span>触发比例</span><input id="contextCompactionRatio" type="number" min="0.4" max="0.95" step="0.05" /></label>
+                    <label><span>保留最近轮数</span><input id="contextKeepRecentTurns" type="number" min="2" max="40" step="1" /></label>
+                    <label><span>摘要最大字数</span><input id="contextSummaryMaxChars" type="number" min="300" max="4000" step="100" /></label>
+                    <label><span>摘要层数</span><input id="contextSummaryMaxLayers" type="number" min="1" max="5" step="1" /></label>
+                  </div>
+                </section>
+              </div>
+            </article>
             <article class="settings-panel proactive-panel" id="proactive">
               <div class="panel-head">
                 <div><p class="eyebrow">Proactive Intelligence</p><h2>主动性</h2></div>
@@ -375,16 +428,24 @@
                 </section>
                 <section class="proactive-card wide">
                   <div class="appearance-card-head"><strong>日常问候</strong><small>早安、午间、晚安和久未联系</small></div>
-                  <div class="greeting-grid">
-                    <label><input id="greetingsEnabled" type="checkbox" /> 启用问候</label>
-                    <label><input id="morningEnabled" type="checkbox" /> 早安</label>
-                    <label><span>早安开始</span><input id="morningStart" type="time" /></label>
-                    <label><span>早安结束</span><input id="morningEnd" type="time" /></label>
-                    <label><input id="morningWeather" type="checkbox" /> 带天气</label>
-                    <label><input id="morningReminders" type="checkbox" /> 带今日提醒</label>
-                    <label><input id="noonEnabled" type="checkbox" /> 午间问候</label>
-                    <label><input id="nightEnabled" type="checkbox" /> 晚安</label>
-                    <label><input id="absenceEnabled" type="checkbox" /> 久未联系</label>
+                  <div class="greeting-panel">
+                    <div class="greeting-switches">
+                      <label><input id="greetingsEnabled" type="checkbox" /> 启用问候</label>
+                      <label><input id="morningEnabled" type="checkbox" /> 早安</label>
+                    </div>
+                    <div class="greeting-time-range">
+                      <span>早安时间</span>
+                      <input id="morningStart" type="time" />
+                      <em>至</em>
+                      <input id="morningEnd" type="time" />
+                    </div>
+                    <div class="greeting-options">
+                      <label><input id="morningWeather" type="checkbox" /> 带天气</label>
+                      <label><input id="morningReminders" type="checkbox" /> 带今日提醒</label>
+                      <label><input id="noonEnabled" type="checkbox" /> 午间问候</label>
+                      <label><input id="nightEnabled" type="checkbox" /> 晚安</label>
+                      <label><input id="absenceEnabled" type="checkbox" /> 久未联系</label>
+                    </div>
                   </div>
                   <label class="wide"><span>自定义早安文案</span><textarea id="morningMessage" placeholder="留空则使用默认问候"></textarea></label>
                 </section>

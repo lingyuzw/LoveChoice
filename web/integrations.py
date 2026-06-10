@@ -1114,6 +1114,7 @@ class ExternalDialogEngine:
             "sender_id": sender_id,
             "conversation_id": conversation["id"],
             "reply_text": reply_text,
+            "attachments": [],
             "send_voice": send_voice,
             "voice_file": voice_file,
             "voice_error": voice_error,

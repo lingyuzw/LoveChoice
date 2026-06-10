@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import re
@@ -39,11 +40,13 @@ from config import (
 from conversations import ConversationStore
 from direct_answers import direct_answer_from_tool
 from integrations import ExternalDialogEngine, IntegrationManager
+from media_assets import ChatImageStore, StickerStore
 from profiles import BotProfileStore
 from proactive import FollowupPolicy, ProactiveStore
 from reminders import ReminderStore
 from runtime_brain import MemoryStore, ToolManager, parse_tool_call
 from services import ServiceManager, check_service, health_url_from
+from sticker_policy import StickerPolicy
 from system_resources import collect_system_resources
 from tool_config import ToolProviderConfig
 from vad import MIC_SAMPLE_RATE, VadModelStore, VoiceVadSession
@@ -73,6 +76,9 @@ PROACTIVE_CONFIG = RUNTIME_DIR / "proactive_config.json"
 PROACTIVE_DB = RUNTIME_DIR / "proactive.sqlite3"
 UPLOAD_DIR = RUNTIME_DIR / "uploads"
 AVATAR_DIR = UPLOAD_DIR / "avatars"
+CHAT_IMAGE_DIR = UPLOAD_DIR / "chat_images"
+STICKER_DIR = UPLOAD_DIR / "stickers"
+STICKERS_CONFIG = RUNTIME_DIR / "stickers.json"
 
 END = object()
 GLOBAL_TTS_LOCK = asyncio.Lock()
@@ -507,6 +513,9 @@ def create_app(args) -> FastAPI:
     app.state.tool_manager = ToolManager(TOOLS_CONFIG, app.state.tool_providers)
     app.state.bot_profiles = BotProfileStore(BOT_PROFILES_CONFIG, app.state.settings.system)
     app.state.avatar_store = AvatarStore(AVATAR_DIR)
+    app.state.chat_image_store = ChatImageStore(CHAT_IMAGE_DIR)
+    app.state.sticker_store = StickerStore(STICKER_DIR, STICKERS_CONFIG)
+    app.state.sticker_policy = StickerPolicy()
     app.state.reminder_store = ReminderStore(REMINDERS_DB)
     app.state.proactive_store = ProactiveStore(PROACTIVE_CONFIG, PROACTIVE_DB)
     app.state.followup_policy = FollowupPolicy(app.state.proactive_store)
@@ -608,6 +617,42 @@ def create_app(args) -> FastAPI:
             return {"asset": app.state.avatar_store.save_data_url(str((payload or {}).get("data_url") or ""))}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/assets/chat-image")
+    async def upload_chat_image(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        try:
+            asset = app.state.chat_image_store.save_data_url(
+                str((payload or {}).get("data_url") or ""),
+                max_mb=float(getattr(app.state.settings, "vision_max_image_mb", 8.0)),
+            )
+            return {"asset": asset}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/stickers")
+    async def list_stickers(request: Request):
+        require_local_service_control(request)
+        return {"stickers": app.state.sticker_store.list()}
+
+    @app.post("/api/stickers")
+    async def upload_sticker(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        payload = payload or {}
+        try:
+            sticker = app.state.sticker_store.add_data_url(
+                str(payload.get("data_url") or ""),
+                tag=str(payload.get("tag") or "默认"),
+                name=str(payload.get("name") or ""),
+            )
+            return {"sticker": sticker, "stickers": app.state.sticker_store.list()}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/stickers/{sticker_id}")
+    async def delete_sticker(sticker_id: str, request: Request):
+        require_local_service_control(request)
+        return {"ok": app.state.sticker_store.delete(sticker_id), "stickers": app.state.sticker_store.list()}
 
     @app.get("/api/reminders")
     async def reminders(request: Request, status: str = ""):
@@ -1046,6 +1091,9 @@ def create_app(args) -> FastAPI:
             app.state.memory_store,
             app.state.tool_manager,
             app.state.followup_policy,
+            app.state.chat_image_store,
+            app.state.sticker_store,
+            app.state.sticker_policy,
             websocket.query_params.get("conversation_id"),
         )
         await session.run()
@@ -1055,6 +1103,16 @@ def create_app(args) -> FastAPI:
 
 def compact_str(s: str) -> str:
     return "".join(s.split())[:200]
+
+
+def attachment_text(attachments: list[dict]) -> str:
+    parts = []
+    for item in attachments or []:
+        if item.get("type") == "image":
+            parts.append(f"[图片] {item.get('summary') or item.get('url') or ''}".strip())
+        elif item.get("type") == "sticker":
+            parts.append(f"[表情包:{item.get('tag') or item.get('name') or '默认'}]")
+    return " ".join(parts)
 
 
 class DialogSession:
@@ -1069,6 +1127,9 @@ class DialogSession:
         memory_store: MemoryStore,
         tool_manager: ToolManager,
         followup_policy: FollowupPolicy | None,
+        chat_image_store: ChatImageStore,
+        sticker_store: StickerStore,
+        sticker_policy: StickerPolicy,
         conversation_id: str | None,
     ):
         self.websocket = websocket
@@ -1079,6 +1140,9 @@ class DialogSession:
         self.memory_store = memory_store
         self.tool_manager = tool_manager
         self.followup_policy = followup_policy
+        self.chat_image_store = chat_image_store
+        self.sticker_store = sticker_store
+        self.sticker_policy = sticker_policy
         self.conversation = conversation_store.load(conversation_id) if conversation_id else None
         if not self.conversation:
             self.conversation = self.draft_conversation()
@@ -1176,6 +1240,13 @@ class DialogSession:
             text = str(data.get("text") or "").strip()
             if text:
                 await self.start_current_task(self.process_user_text(text, source="text"))
+            return
+
+        if msg_type == "message":
+            text = str(data.get("text") or "").strip()
+            attachments = data.get("attachments") if isinstance(data.get("attachments"), list) else []
+            if text or attachments:
+                await self.start_current_task(self.process_user_text(text or "请看看这张图片。", source="text", attachments=attachments))
             return
 
         if msg_type == "interrupt":
@@ -1276,7 +1347,13 @@ class DialogSession:
                 await self.send_event("turn_done")
                 self.finish_trace(trace_id, "asr_empty_or_failed")
 
-    async def process_user_text(self, user_text: str, source: str, trace_id: str | None = None) -> None:
+    async def process_user_text(
+        self,
+        user_text: str,
+        source: str,
+        trace_id: str | None = None,
+        attachments: list[dict] | None = None,
+    ) -> None:
         if self.processing and source == "text":
             await self.send_event("busy")
             return
@@ -1288,8 +1365,10 @@ class DialogSession:
 
         old_processing = self.processing
         self.processing = True
-        await self.send_event("user", text=user_text, source=source)
-        self.persist_messages([{"role": "user", "content": user_text, "source": source}], title_hint=user_text)
+        user_attachments = await self.prepare_user_attachments(attachments or [])
+        request_user_text = self.compose_user_request_text(user_text, user_attachments)
+        await self.send_event("user", text=user_text, source=source, attachments=user_attachments)
+        self.persist_messages([{"role": "user", "content": user_text, "source": source, "attachments": user_attachments}], title_hint=user_text)
         await self.send_event("conversation_saved", conversation=self.conversation)
 
         try:
@@ -1321,7 +1400,7 @@ class DialogSession:
                 self.trim_history()
                 return
 
-            request_user_text = build_request_user_text(user_text, last_assistant_content(self.messages))
+            request_user_text = build_request_user_text(request_user_text, last_assistant_content(self.messages))
             tool_result = await self.maybe_execute_tool(user_text)
             if tool_result:
                 direct_answer = direct_answer_from_tool(tool_result)
@@ -1331,11 +1410,15 @@ class DialogSession:
                     await self.send_event("tool", id=tool_result.get("tool"), arguments=tool_result.get("arguments") or {})
                     await self.send_event("llm_delta", text=direct_answer)
                     await self.stream_direct_tts(direct_answer)
-                    self.messages.append({"role": "user", "content": user_text})
+                    self.messages.append({"role": "user", "content": request_user_text})
                     self.messages.append({"role": "assistant", "content": direct_answer})
-                    self.persist_messages([{"role": "assistant", "content": direct_answer}])
+                    assistant_attachments = self.choose_reply_sticker(user_text, direct_answer, source)
+                    if assistant_attachments:
+                        await self.send_event("assistant_attachment", attachments=assistant_attachments)
+                    self.persist_messages([{"role": "assistant", "content": direct_answer, "attachments": assistant_attachments}])
                     await self.send_event("conversation_saved", conversation=self.conversation)
-                    await self.remember_turn_safely(user_text, direct_answer)
+                    await self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), direct_answer)
+                    await self.maybe_compact_conversation()
                     self.trim_history()
                     return
                 request_user_text += (
@@ -1363,12 +1446,16 @@ class DialogSession:
                     with contextlib.suppress(asyncio.CancelledError):
                         await tts_task
 
-            self.messages.append({"role": "user", "content": user_text})
+            self.messages.append({"role": "user", "content": request_user_text})
             if full_answer:
                 self.messages.append({"role": "assistant", "content": full_answer})
-                self.persist_messages([{"role": "assistant", "content": full_answer}])
+                assistant_attachments = self.choose_reply_sticker(user_text, full_answer, source)
+                if assistant_attachments:
+                    await self.send_event("assistant_attachment", attachments=assistant_attachments)
+                self.persist_messages([{"role": "assistant", "content": full_answer, "attachments": assistant_attachments}])
                 await self.send_event("conversation_saved", conversation=self.conversation)
-                await self.remember_turn_safely(user_text, full_answer)
+                await self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), full_answer)
+                await self.maybe_compact_conversation()
             self.trim_history()
         except Exception as exc:
             self.trace_log(trace_id, f"dialog:error {exc}")
@@ -1377,6 +1464,165 @@ class DialogSession:
             self.processing = old_processing
             await self.send_event("turn_done")
             self.finish_trace(trace_id)
+
+    async def prepare_user_attachments(self, attachments: list[dict]) -> list[dict]:
+        prepared: list[dict] = []
+        for attachment in attachments[:4]:
+            if not isinstance(attachment, dict) or attachment.get("type") != "image":
+                continue
+            asset = self.chat_image_store.resolve(str(attachment.get("asset_id") or attachment.get("id") or ""))
+            if not asset:
+                continue
+            summary = str(attachment.get("summary") or "").strip()
+            if not summary:
+                summary = await self.describe_image(asset)
+            prepared.append(
+                {
+                    "type": "image",
+                    "asset_id": asset["id"],
+                    "url": asset["url"],
+                    "mime": asset["mime"],
+                    "summary": summary,
+                }
+            )
+        return prepared
+
+    async def describe_image(self, asset: dict) -> str:
+        if not getattr(self.settings, "vision_enabled", True):
+            return "图片理解未启用。"
+        path = Path(asset.get("path") or "")
+        if not path.exists():
+            return "图片文件不存在，无法理解。"
+        try:
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            data_url = f"data:{asset.get('mime') or 'image/png'};base64,{encoded}"
+            payload = {
+                "model": self.settings.vision_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "请用中文简洁描述这张图片的主体、场景、文字和可能的情绪。不要编造看不见的内容，80字以内。",
+                            },
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                "stream": False,
+                "temperature": 0.1,
+                "max_tokens": 180,
+            }
+            async with httpx.AsyncClient(timeout=float(getattr(self.settings, "vision_timeout", 45.0))) as client:
+                resp = await client.post(self.settings.vision_url, json=payload, headers=llm_headers(self.settings))
+            resp.raise_for_status()
+            summary = extract_chat_message_text(resp.json()).strip()
+            return compact_text(summary, 260) or "图片已收到，但没有识别出明确内容。"
+        except Exception as exc:
+            return f"图片理解失败：{exc}"
+
+    def compose_user_request_text(self, user_text: str, attachments: list[dict]) -> str:
+        text = user_text.strip() or "请看看这张图片。"
+        image_lines = []
+        for index, item in enumerate(attachments, start=1):
+            if item.get("type") == "image":
+                image_lines.append(f"图片{index}摘要：{item.get('summary') or '未生成摘要'}")
+        if image_lines:
+            text += "\n\n用户随消息发送了图片。你只能基于图片摘要理解图片，不要假装看到了摘要以外的细节：\n" + "\n".join(image_lines)
+        return text
+
+    def choose_reply_sticker(self, user_text: str, reply_text: str, source: str) -> list[dict]:
+        session_id = self.conversation.get("id") or source or "web"
+        intent = self.sticker_policy.choose_intent(
+            self.settings,
+            session_id=session_id,
+            user_text=user_text,
+            reply_text=reply_text,
+            source=source,
+        )
+        if not intent.get("send"):
+            self.sticker_policy.mark_text_only(session_id)
+            return []
+        sticker = self.sticker_store.choose(str(intent.get("tag") or ""), avoid_id=str(intent.get("avoid_id") or ""))
+        if not sticker:
+            self.sticker_policy.mark_text_only(session_id)
+            return []
+        self.sticker_policy.mark_sent(session_id, sticker["id"])
+        self.sticker_store.mark_used(sticker["id"])
+        return [
+            {
+                "type": "sticker",
+                "asset_id": sticker["id"],
+                "url": sticker["url"],
+                "mime": sticker.get("mime") or "image/png",
+                "tag": sticker.get("tag") or "",
+                "name": sticker.get("name") or "表情包",
+            }
+        ]
+
+    def memory_observation_text(self, user_text: str, attachments: list[dict]) -> str:
+        if not getattr(self.settings, "vision_memory_extract_enabled", False):
+            return user_text
+        image_summaries = [
+            str(item.get("summary") or "").strip()
+            for item in attachments or []
+            if item.get("type") == "image" and item.get("summary")
+        ]
+        if not image_summaries:
+            return user_text
+        return user_text + "\n\n图片摘要（仅在通过记忆准入时才可记住）：\n" + "\n".join(image_summaries)
+
+    async def maybe_compact_conversation(self) -> None:
+        if not getattr(self.settings, "context_compaction_enabled", True):
+            return
+        history = self.conversation.get("messages") or []
+        keep_messages = max(4, int(getattr(self.settings, "context_keep_recent_turns", 10)) * 2)
+        if len(history) <= max(36, keep_messages + 8):
+            return
+        compacted_until = int(self.conversation.get("compacted_until") or 0)
+        cutoff = max(0, len(history) - keep_messages)
+        if cutoff <= compacted_until:
+            return
+        estimated_chars = sum(len(str(item.get("content") or "")) for item in history)
+        window_chars = int(getattr(self.settings, "context_window_tokens", 8192) * 2.2)
+        threshold = window_chars * float(getattr(self.settings, "context_compaction_ratio", 0.7))
+        if estimated_chars < threshold and len(history) < 60:
+            return
+        chunk = history[compacted_until:cutoff]
+        if not chunk:
+            return
+        old_summary = str(self.conversation.get("context_summary") or "")
+        transcript = "\n".join(
+            f"{item.get('role')}: {compact_text(item.get('content') or attachment_text(item.get('attachments') or []), 220)}"
+            for item in chunk
+        )
+        prompt = (
+            "请更新一份中文会话摘要，用于长期聊天上下文压缩。"
+            "保留用户偏好、重要事实、未完成事项、关系语气、正在讨论的项目和关键结论。"
+            "删除寒暄、重复句、工具原始数据和无意义细节。"
+            f"摘要不超过 {int(getattr(self.settings, 'context_summary_max_chars', 1200))} 字。\n\n"
+            f"已有摘要：\n{old_summary or '无'}\n\n新增需要压缩的消息：\n{transcript}"
+        )
+        try:
+            summary = await self.complete_llm_text(
+                [{"role": "system", "content": "你是会话摘要器，只输出摘要正文。"}, {"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=700,
+                timeout=20.0,
+            )
+        except Exception as exc:
+            self.trace_log(self.current_trace_id, f"context_compaction failed: {exc}")
+            return
+        summary = compact_text(summary, int(getattr(self.settings, "context_summary_max_chars", 1200)))
+        layers = list(self.conversation.get("context_summary_layers") or [])
+        layers.insert(0, {"created_at": time.strftime("%Y-%m-%d %H:%M:%S"), "until": cutoff, "summary": summary})
+        layers = layers[: max(1, int(getattr(self.settings, "context_summary_max_layers", 3)))]
+        self.conversation = self.conversation_store.update(
+            self.conversation["id"],
+            {"context_summary": summary, "context_summary_layers": layers, "compacted_until": cutoff},
+        ) or self.conversation
+        self.messages = self.build_llm_messages(self.conversation)
 
     async def remember_turn_safely(self, user_text: str, assistant_text: str) -> None:
         try:
@@ -1389,8 +1635,12 @@ class DialogSession:
         for item in conversation.get("messages") or []:
             role = item.get("role")
             content = item.get("content")
-            if role in {"user", "assistant"} and content:
-                messages.append({"role": role, "content": content})
+            attachments_note = attachment_text(item.get("attachments") or [])
+            if role in {"user", "assistant"} and (content or attachments_note):
+                full_content = content or ""
+                if attachments_note:
+                    full_content += "\n" + attachments_note
+                messages.append({"role": role, "content": full_content.strip()})
         return messages
 
     def draft_conversation(self) -> dict:
@@ -1442,6 +1692,9 @@ class DialogSession:
             )
 
         old_content = messages[0].get("content", "")
+        context_summary = str(self.conversation.get("context_summary") or "").strip()
+        if context_summary:
+            old_content += "\n\n会话压缩摘要（较早聊天的浓缩记录，可能不完整，但比遗忘更可靠）：\n" + context_summary
         if memory_context:
             old_content += "\n\n" + memory_context
         old_content += time_note

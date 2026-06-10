@@ -181,6 +181,8 @@ def body_from_items(items: list[dict] | None) -> str:
             text = ((item.get("voice_item") or {}).get("text") or "").strip()
             if text:
                 return text
+        if str(item.get("type")) not in {str(ITEM_TEXT), str(ITEM_VOICE)}:
+            return "[用户发送了一条当前版本暂不能直接解析的微信媒体消息，可能是图片、表情包或文件。请自然说明你现在还看不到这张图，让用户在 Web 端上传图片，或稍后等微信图片解析接入。]"
     return ""
 
 

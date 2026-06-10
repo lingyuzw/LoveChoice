@@ -62,6 +62,9 @@ class ConversationStore:
             "archived": False,
             "favorite": False,
             "summary": "",
+            "context_summary": "",
+            "context_summary_layers": [],
+            "compacted_until": 0,
             "messages": [],
         }
         self._write_conversation(conversation)
@@ -94,21 +97,23 @@ class ConversationStore:
         for message in messages:
             role = str(message.get("role") or "").strip()
             content = str(message.get("content") or "").strip()
-            if role not in {"user", "assistant", "system"} or not content:
+            attachments = self._normalize_attachments(message.get("attachments") or [])
+            if role not in {"user", "assistant", "system"} or (not content and not attachments):
                 continue
-            conversation["messages"].append(
-                {
-                    "id": uuid.uuid4().hex[:10],
-                    "role": role,
-                    "content": content,
-                    "source": message.get("source") or "",
-                    "display_name": message.get("display_name") or "",
-                    "avatar_url": message.get("avatar_url") or "",
-                    "platform_id": message.get("platform_id") or "",
-                    "sender_id": message.get("sender_id") or "",
-                    "created_at": now,
-                }
-            )
+            item = {
+                "id": uuid.uuid4().hex[:10],
+                "role": role,
+                "content": content,
+                "source": message.get("source") or "",
+                "display_name": message.get("display_name") or "",
+                "avatar_url": message.get("avatar_url") or "",
+                "platform_id": message.get("platform_id") or "",
+                "sender_id": message.get("sender_id") or "",
+                "created_at": now,
+            }
+            if attachments:
+                item["attachments"] = attachments
+            conversation["messages"].append(item)
         if title_hint and self._is_default_title(conversation.get("title", "")):
             conversation["title"] = self._make_title(title_hint)
         conversation["updated_at"] = now
@@ -123,6 +128,15 @@ class ConversationStore:
         for key in ("title", "summary"):
             if key in payload and payload[key] is not None:
                 conversation[key] = str(payload[key]).strip()[:240]
+        if "context_summary" in payload and payload["context_summary"] is not None:
+            conversation["context_summary"] = str(payload["context_summary"]).strip()[:4000]
+        if "context_summary_layers" in payload and isinstance(payload["context_summary_layers"], list):
+            conversation["context_summary_layers"] = payload["context_summary_layers"][:3]
+        if "compacted_until" in payload:
+            try:
+                conversation["compacted_until"] = max(0, int(payload["compacted_until"]))
+            except (TypeError, ValueError):
+                pass
         for key in ("archived", "favorite"):
             if key in payload:
                 conversation[key] = bool(payload[key])
@@ -162,7 +176,13 @@ class ConversationStore:
         conversation.setdefault("archived", False)
         conversation.setdefault("favorite", False)
         conversation.setdefault("summary", "")
+        conversation.setdefault("context_summary", "")
+        conversation.setdefault("context_summary_layers", [])
+        conversation.setdefault("compacted_until", 0)
         conversation.setdefault("messages", [])
+        for item in conversation["messages"]:
+            if isinstance(item, dict):
+                item["attachments"] = self._normalize_attachments(item.get("attachments") or [])
         return conversation
 
     def _read_index(self) -> list[dict]:
@@ -208,7 +228,7 @@ class ConversationStore:
                 "favorite": bool(conversation.get("favorite")),
                 "summary": conversation.get("summary") or self._auto_summary(messages),
                 "message_count": len(messages),
-                "last_message": (last.get("content") or "")[:80],
+                "last_message": self._message_preview(last),
                 "source": conversation.get("source") or source_message.get("source") or "",
                 "platform_id": conversation.get("platform_id") or source_message.get("platform_id") or "",
                 "sender_id": conversation.get("sender_id") or source_message.get("sender_id") or "",
@@ -252,3 +272,36 @@ class ConversationStore:
             return ""
         text = re.sub(r"\s+", " ", useful[-1]).strip()
         return text[:96]
+
+    def _normalize_attachments(self, attachments) -> list[dict]:
+        if not isinstance(attachments, list):
+            return []
+        normalized = []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            atype = str(attachment.get("type") or "").strip()
+            if atype not in {"image", "sticker"}:
+                continue
+            item = {
+                "type": atype,
+                "asset_id": str(attachment.get("asset_id") or attachment.get("id") or ""),
+                "url": str(attachment.get("url") or ""),
+                "mime": str(attachment.get("mime") or ""),
+                "tag": str(attachment.get("tag") or ""),
+                "name": str(attachment.get("name") or ""),
+                "summary": str(attachment.get("summary") or ""),
+            }
+            if item["asset_id"] or item["url"]:
+                normalized.append(item)
+        return normalized[:6]
+
+    def _message_preview(self, message: dict) -> str:
+        content = str((message or {}).get("content") or "").strip()
+        if content:
+            return content[:80]
+        attachments = (message or {}).get("attachments") or []
+        if attachments:
+            atype = attachments[0].get("type")
+            return "[图片]" if atype == "image" else "[表情包]"
+        return ""

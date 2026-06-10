@@ -12,6 +12,7 @@ import {
   loadConversations,
   deleteConversation,
   updateConversation,
+  uploadChatImage,
 } from "./api.js";
 import {
   bindAppearanceRefresh,
@@ -23,6 +24,7 @@ import {
   interruptAssistant,
   setTranscriptCallback,
   setPipelineUpdater,
+  scrollTranscriptToBottom,
 } from "./dialog.js";
 import { startMic, stopMic, sendMicSamples, shouldTriggerBargeIn } from "./audio.js";
 
@@ -73,6 +75,9 @@ function setupDashboardEvents() {
   eventsBound = true;
   bindComposer("micBtn", "sendBtn", "interruptBtn", "resetBtn", "textInput");
   bindComposer("micBtnWelcome", "sendBtnWelcome", "interruptBtnWelcome", "resetBtnWelcome", "textInputWelcome");
+  $("#attachImageBtn")?.addEventListener("click", () => $("#chatImageInput")?.click());
+  $("#attachImageBtnWelcome")?.addEventListener("click", () => $("#chatImageInput")?.click());
+  $("#chatImageInput")?.addEventListener("change", handleChatImageSelected);
   $("#newConversationBtn")?.addEventListener("click", newConversation);
   $("#conversationSearchInput")?.addEventListener("input", handleConversationSearch);
   $("#archiveModeBtn")?.addEventListener("click", toggleArchiveMode);
@@ -143,12 +148,14 @@ function syncChatView() {
     if (messages) messages.style.display = "none";
     if (composer) composer.style.display = "none";
   }
+  if (hasMessages) scrollTranscriptToBottom();
 }
 
 function sendText(inputId) {
   const input = $(`#${inputId}`);
   const text = input?.value.trim();
-  if (!text) return;
+  const attachments = state.pendingAttachments || [];
+  if (!text && !attachments.length) return;
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
     showToast("对话后端未连接", "error");
     return;
@@ -161,10 +168,80 @@ function sendText(inputId) {
 
   setText("topStatus", "发送");
   updatePipelineCompact("llm", "已发送");
-  state.ws.send(JSON.stringify({ type: "text", text }));
+  if (attachments.length) {
+    state.ws.send(JSON.stringify({ type: "message", text, attachments }));
+    clearPendingAttachments();
+  } else {
+    state.ws.send(JSON.stringify({ type: "text", text }));
+  }
   input.value = "";
   resizeComposerInput(input);
   if (!hasMessages) syncChatView();
+}
+
+async function handleChatImageSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    if (!file.type.startsWith("image/")) throw new Error("请选择图片文件");
+    const dataUrl = await fileToDataUrl(file);
+    const result = await uploadChatImage(dataUrl);
+    const asset = result.asset;
+    state.pendingAttachments = [
+      ...(state.pendingAttachments || []),
+      { type: "image", asset_id: asset.id, url: asset.url, mime: asset.mime, name: file.name },
+    ].slice(-4);
+    renderPendingAttachments();
+    showToast("图片已添加，发送后枝语会尝试看懂它", "success");
+  } catch (error) {
+    showToast(`图片添加失败：${error.message}`, "error");
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function renderPendingAttachments() {
+  for (const id of ["attachmentPreviewStrip", "attachmentPreviewStripWelcome"]) {
+    const host = $(`#${id}`);
+    if (!host) continue;
+    host.replaceChildren();
+    const items = state.pendingAttachments || [];
+    host.hidden = !items.length;
+    for (const item of items) {
+      const chip = document.createElement("div");
+      chip.className = "attachment-preview-chip";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = item.name || "待发送图片";
+      const label = document.createElement("span");
+      label.textContent = item.name || "图片";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.title = "移除图片";
+      remove.appendChild(createIcon("x"));
+      remove.addEventListener("click", () => {
+        state.pendingAttachments = (state.pendingAttachments || []).filter((candidate) => candidate.asset_id !== item.asset_id);
+        renderPendingAttachments();
+      });
+      chip.append(img, label, remove);
+      host.appendChild(chip);
+    }
+  }
+  renderIcons();
+}
+
+function clearPendingAttachments() {
+  state.pendingAttachments = [];
+  renderPendingAttachments();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function resetPipelineCompact() {

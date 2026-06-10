@@ -362,8 +362,12 @@
 
 @media (max-width: 720px) {
   .appearance-layout,
+  .dialog-feature-grid,
   .tool-resolve-row,
   .bot-profile-card {
+    grid-template-columns: 1fr;
+  }
+  .dialog-feature-card .form-grid.compact {
     grid-template-columns: 1fr;
   }
   .appearance-identity-card {
@@ -375,7 +379,8 @@
 }
 
 @media (max-width: 1100px) {
-  .appearance-layout {
+  .appearance-layout,
+  .dialog-feature-grid {
     grid-template-columns: 1fr;
   }
   .theme-toggle-group--compact {
@@ -391,6 +396,98 @@
 
 .tool-provider-actions .secondary-action {
   min-height: 34px;
+}
+
+.dialog-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.dialog-feature-card {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 78%, transparent), color-mix(in srgb, var(--surface) 92%, transparent));
+  box-shadow: var(--shadow-sm);
+}
+.dialog-feature-card.wide {
+  grid-column: 1 / -1;
+}
+.dialog-feature-card .form-grid.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sticker-library-panel {
+  display: grid;
+  gap: 10px;
+}
+.sticker-upload-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.sticker-library-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 8px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.sticker-library-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 28px;
+  grid-template-rows: 74px auto;
+  gap: 5px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+.sticker-library-item img {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 74px;
+  object-fit: contain;
+}
+.sticker-library-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.sticker-library-item button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--text-muted);
+}
+.sticker-library-item button:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.sticker-library-item svg {
+  width: 14px;
+  height: 14px;
+}
+.sticker-library-empty {
+  min-height: 74px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
 }
 
 .proactive-layout {
@@ -425,14 +522,16 @@
 }
 
 .toggle-row,
-.greeting-grid {
+.greeting-switches,
+.greeting-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 8px;
 }
 
 .toggle-row label,
-.greeting-grid label {
+.greeting-switches label,
+.greeting-options label {
   min-height: 38px;
   display: flex;
   align-items: center;
@@ -445,10 +544,29 @@
   font-size: var(--font-sm);
 }
 
-.greeting-grid label:has(input[type="time"]) {
+.greeting-panel {
   display: grid;
-  grid-template-columns: minmax(76px, auto) minmax(120px, 1fr);
+  gap: 8px;
+}
+
+.greeting-time-range {
+  display: grid;
+  grid-template-columns: auto minmax(132px, 180px) auto minmax(132px, 180px);
   align-items: center;
+  justify-content: start;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.greeting-time-range span,
+.greeting-time-range em {
+  color: var(--text-muted);
+  font-size: var(--font-label);
+  font-style: normal;
+  font-weight: 700;
 }
 
 .proactive-card input[type="time"],
@@ -560,8 +678,12 @@
   .proactive-card > .form-grid.compact,
   .proactive-time-grid,
   .toggle-row,
-  .greeting-grid,
+  .greeting-switches,
+  .greeting-options,
   .reminder-editor {
+    grid-template-columns: 1fr;
+  }
+  .greeting-time-range {
     grid-template-columns: 1fr;
   }
 }

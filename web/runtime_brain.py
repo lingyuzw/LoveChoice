@@ -22,6 +22,37 @@ from tool_config import DEFAULT_TOOL_PROVIDER_CONFIG, deep_merge
 SECONDS_PER_DAY = 86400
 MEMORY_LAYERS = {"short", "mid", "long"}
 TOOL_DEFAULTS_VERSION = 2
+MEMORY_ADMISSION_DEFAULT_MIN_IMPORTANCE = 0.55
+
+MEMORY_STABLE_HINTS = (
+    "我叫", "我的名字", "叫我", "我是", "我的身份", "我住", "现居", "来自",
+    "喜欢", "不喜欢", "讨厌", "偏好", "习惯", "经常", "每天", "通常",
+    "过敏", "忌口", "不能吃", "不要", "别叫", "以后", "希望你",
+    "目标", "计划", "准备", "正在做", "项目", "学习", "工作", "职业",
+    "朋友", "同事", "家人", "妈妈", "爸爸", "女朋友", "男朋友", "伴侣",
+    "生日", "纪念日",
+)
+MEMORY_STRONG_STABLE_HINTS = (
+    "我叫", "我的名字", "叫我", "我是", "喜欢", "不喜欢", "讨厌",
+    "过敏", "忌口", "习惯", "经常", "每天", "以后", "不要", "别叫",
+    "目标", "计划", "项目", "生日", "纪念日",
+)
+MEMORY_EVENT_KEEP_HINTS = (
+    "提醒", "记得", "待办", "预约", "约了", "约我", "会议", "面试",
+    "考试", "截止", "deadline", "复诊", "看医生", "吃药", "航班",
+    "火车", "高铁", "上线", "发布", "部署", "训练", "搬家", "生日",
+    "纪念日", "明天", "后天", "下周", "下个月",
+)
+MEMORY_REALTIME_HINTS = (
+    "天气", "几点", "时间", "今天几号", "星期几", "新闻", "热搜",
+    "股价", "汇率", "价格", "搜索", "查一下", "查下", "在哪",
+    "在哪里", "路线", "地图", "导航", "附近", "网址", "网页",
+    "http://", "https://",
+)
+MEMORY_SECRET_HINTS = (
+    "密码", "验证码", "token", "api key", "apikey", "密钥", "secret",
+    "身份证", "银行卡", "支付密码", "私钥", "access key",
+)
 
 
 def now_ts() -> float:
@@ -42,6 +73,13 @@ def days_since(timestamp: float | int | None, now: float | None = None) -> float
 
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def compact_text(text: str, limit: int = 280) -> str:
@@ -260,7 +298,11 @@ class MemoryStore:
         saved = []
         for candidate in candidates:
             try:
-                mem = self.upsert_memory(candidate, source=candidate.get("source", "chat"), excerpt=user_text)
+                admitted, reason = admit_memory_candidate(candidate, user_text, settings)
+                if not admitted:
+                    print(f"[memory] rejected candidate ({reason}): {candidate!r}", flush=True)
+                    continue
+                mem = self.upsert_memory(admitted, source=admitted.get("source", "chat"), excerpt=user_text)
             except Exception as exc:
                 print(f"[memory] skipped invalid candidate: {exc}; candidate={candidate!r}", flush=True)
                 continue
@@ -285,8 +327,8 @@ class MemoryStore:
             raise ValueError("memory key/value is empty")
         key_norm = normalize_key(key)
         layer = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "short"
-        confidence_gain = 0.3 if source == "manual" else float(item.get("confidence_gain", 0.12))
-        importance = clamp(float(item.get("importance", 0.45)), 0.0, 1.0)
+        confidence_gain = 0.3 if source == "manual" else safe_float(item.get("confidence_gain", 0.12), 0.12)
+        importance = clamp(safe_float(item.get("importance", 0.45), 0.45), 0.0, 1.0)
         memory_type = item.get("memory_type", "semantic_fact")
         time_text = item.get("time_text", "")
         event_date = item.get("event_date", "")
@@ -297,7 +339,7 @@ class MemoryStore:
             key_norm = normalize_key(key) + ":" + normalize_key(time_text)
 
         with self.session() as conn:
-            confidence = clamp(float(item.get("confidence", 0.45)), 0.0, 1.0)
+            confidence = clamp(safe_float(item.get("confidence", 0.45), 0.45), 0.0, 1.0)
             if source == "manual":
                 layer = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "mid"
                 confidence = max(confidence, 0.85)
@@ -489,6 +531,8 @@ def _resolve_event_date(time_text: str) -> tuple[str, str]:
     today = date.today()
     t_clean = time_text.strip()
     mapping = {
+        "明天晚上": -1, "明天中午": -1, "明天下午": -1, "明天上午": -1, "明天早上": -1, "明天": -1,
+        "后天晚上": -2, "后天中午": -2, "后天下午": -2, "后天上午": -2, "后天早上": -2, "后天": -2,
         "今天晚上": 0, "今天中午": 0, "今天下午": 0, "今天上午": 0, "今天早上": 0, "今天": 0, "今早": 0, "今晚": 0,
         "昨天晚上": 1, "昨天下午": 1, "昨天上午": 1, "昨天早上": 1, "昨天中午": 1, "昨晚": 1, "昨天": 1,
         "前天晚上": 2, "前天下午": 2, "前天上午": 2, "前天": 2,
@@ -526,7 +570,9 @@ def _guess_time_of_day(time_text: str, full_sentence: str = "") -> str:
 
 
 EXTRACT_MEMORY_PROMPT = (
-    "从用户消息中提取可记忆的事实性信息。仅提取明确表述的偏好、身份、状态或事件。\n"
+    "从用户消息中提取可记忆的事实性信息。只提取未来对话长期有用的信息。\n"
+    "可以提取：身份/称呼、稳定偏好、习惯、长期目标、正在推进的项目、重要关系、忌口过敏、明确要求记住的内容、未来提醒或重要日程。\n"
+    "不要提取：寒暄、感谢、重复问答、普通情绪、一次性吃喝闲聊、天气/新闻/股票/地图/搜索/网页等实时查询、助手自己的回复、密码/验证码/token/API Key 等敏感信息。\n"
     "输出 JSON 数组，每项包含：\n"
     "- memory_type: \"semantic_fact\" 或 \"episodic_event\"\n"
     "- key: 简短的记忆键名（中文）\n"
@@ -566,7 +612,7 @@ async def extract_memory_candidates_llm(user_text: str, extract_fn, assistant_te
                         "value": compact_text(item["value"], 300),
                         "layer": "short",
                         "confidence": 0.55,
-                        "importance": clamp(float(item.get("importance", 0.45)), 0.0, 1.0),
+                        "importance": clamp(safe_float(item.get("importance", 0.45), 0.45), 0.0, 1.0),
                         "source": "chat",
                         "memory_type": item.get("memory_type", "semantic_fact"),
                         "time_text": item.get("time_text", ""),
@@ -618,6 +664,9 @@ def _extract_memory_fallback(text: str) -> list[dict]:
 
     # ── 时间词提取 ──
     time_words = [
+        "明天晚上", "明天中午", "明天下午", "明天上午", "明天早上",
+        "后天晚上", "后天中午", "后天下午", "后天上午", "后天早上",
+        "明天", "后天",
         "昨天晚上", "今天中午", "今天下午", "今天上午", "今天早上", "今天晚上",
         "昨天下午", "昨天上午", "昨天早上", "昨天中午", "前天晚上", "前天下午", "前天上午",
         "今晚", "今天", "今早", "昨天", "昨晚", "前天", "刚才", "刚刚",
@@ -626,11 +675,13 @@ def _extract_memory_fallback(text: str) -> list[dict]:
 
     found_time = None
     tm = time_re.search(text)
-    if tm and text.startswith("我"):
+    keep_event_hint = any(kw in text for kw in MEMORY_EVENT_KEEP_HINTS)
+    if tm and (text.startswith("我") or keep_event_hint):
         found_time = tm.group(1)
         # 提取时间词后的内容作为事件描述
         after_time = text[tm.end():]
         after_time = re.sub(r'^(?:了|过|，|,|。|\.|\s)+', '', after_time).strip()
+        after_time = re.sub(r"^提醒我", "提醒用户", after_time)
         if after_time and len(after_time) >= 2 and not is_low_value_memory_text(after_time):
             resolved_time, resolved_date = _resolve_event_date(found_time)
             tod = _guess_time_of_day(found_time, text)
@@ -641,9 +692,12 @@ def _extract_memory_fallback(text: str) -> list[dict]:
                 evt_type = "operation"
             else:
                 evt_type = "activity"
+            event_value = f"用户{found_time}{after_time}"
+            if after_time.startswith("提醒用户"):
+                event_value = f"用户需要在{found_time}提醒{after_time.removeprefix('提醒用户')}"
             candidates.append({
                 "key": f"episodic:{evt_type}:{resolved_date}:{after_time[:30]}",
-                "value": f"用户{found_time}{after_time}",
+                "value": event_value,
                 "layer": "short",
                 "confidence": 0.5,
                 "importance": 0.55,
@@ -667,7 +721,7 @@ def _extract_memory_fallback(text: str) -> list[dict]:
     for pattern, fact_type, value_tpl, importance in fact_patterns:
         for match in re.finditer(pattern, text):
             value = compact_text(match.group(1), 100).strip(" ，,。.!！?")
-            if value and not is_low_value_memory_text(value):
+            if value and is_usable_fact_value(value, text):
                 candidates.append({
                     "key": f"{fact_type}:{value[:40]}",
                     "value": value_tpl.format(value),
@@ -678,17 +732,7 @@ def _extract_memory_fallback(text: str) -> list[dict]:
                     "memory_type": "semantic_fact",
                 })
 
-    # ── 通用 fallback ──
-    if not candidates and "我" in text and not re.search(r"[?？]", text) and 8 <= len(text) <= 90:
-        candidates.append({
-            "key": f"用户陈述:{text[:50]}",
-            "value": text,
-            "layer": "short",
-            "confidence": 0.35,
-            "importance": 0.35,
-            "source": "chat",
-            "memory_type": "semantic_fact",
-        })
+    # Do not keep a broad "I said ..." fallback. It made casual chat pollute memory.
 
     # ── 去重 ──
     deduped = []
@@ -700,11 +744,128 @@ def _extract_memory_fallback(text: str) -> list[dict]:
             deduped.append(item)
     return deduped[:5]
 
+
+def is_usable_fact_value(value: str, context: str = "") -> bool:
+    compact = re.sub(r"\s+", "", str(value or ""))
+    if not compact:
+        return False
+    if re.fullmatch(r"(哈|哈哈|啊|哦|嗯|额|呃|好|行|可以|谢谢)+", compact):
+        return False
+    if has_stable_memory_signal(context) and len(compact) >= 2:
+        return True
+    return not is_low_value_memory_text(compact)
+
+
+def admit_memory_candidate(candidate: dict, user_text: str, settings: Any | None = None) -> tuple[dict | None, str]:
+    """Apply the memory admission protocol before anything is persisted.
+
+    The extractor can be generous, but persistence should be conservative:
+    keep stable user facts, preferences, long-lived goals, useful constraints,
+    and explicit "remember this" instructions. Reject realtime questions,
+    small talk, one-off events, and secrets.
+    """
+    if not isinstance(candidate, dict):
+        return None, "invalid"
+    item = dict(candidate)
+    key = compact_text(item.get("key") or item.get("value") or "", 120)
+    value = compact_text(item.get("value") or key, 1000)
+    if not key or not value:
+        return None, "empty"
+
+    item["key"] = key
+    item["value"] = value
+    source = str(item.get("source") or "chat").strip() or "chat"
+    item["source"] = source
+    joined = f"{user_text}\n{key}\n{value}"
+
+    if contains_secret_memory(joined):
+        return None, "secret"
+
+    if not getattr(settings, "memory_admission_enabled", True):
+        return item, "disabled"
+
+    if source in {"manual", "explicit"}:
+        item["layer"] = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "mid"
+        item["confidence"] = max(safe_float(item.get("confidence", 0.85), 0.85), 0.85)
+        item["importance"] = max(safe_float(item.get("importance", 0.85), 0.85), 0.8)
+        return item, "explicit"
+
+    if (is_low_value_memory_text(value) or is_low_value_memory_text(key)) and not has_stable_memory_signal(joined):
+        return None, "low_value"
+    if (is_realtime_memory_text(user_text) or is_realtime_memory_text(value)) and not has_stable_memory_signal(joined):
+        return None, "realtime"
+
+    memory_type = str(item.get("memory_type") or "semantic_fact")
+    item["memory_type"] = memory_type
+    importance = clamp(safe_float(item.get("importance", 0.45), 0.45), 0.0, 1.0)
+    min_importance = clamp(
+        safe_float(getattr(settings, "memory_min_importance", MEMORY_ADMISSION_DEFAULT_MIN_IMPORTANCE), MEMORY_ADMISSION_DEFAULT_MIN_IMPORTANCE),
+        0.0,
+        1.0,
+    )
+
+    if memory_type == "episodic_event":
+        if not is_keepable_event_memory(joined):
+            return None, "weak_event"
+        item["importance"] = max(importance, min_importance, 0.6)
+        item["confidence"] = max(safe_float(item.get("confidence", 0.45), 0.45), 0.55)
+        return item, "event"
+
+    if looks_like_question(user_text) and not has_stable_memory_signal(joined):
+        return None, "question"
+    if not has_stable_memory_signal(joined):
+        return None, "no_stable_signal"
+    if importance < min_importance and not has_strong_stable_memory_signal(joined):
+        return None, "importance"
+
+    item["importance"] = max(importance, min_importance)
+    item["confidence"] = max(safe_float(item.get("confidence", 0.45), 0.45), 0.5)
+    return item, "semantic"
+
+
+def contains_secret_memory(text: str) -> bool:
+    normalized = str(text or "").lower()
+    if any(hint in normalized for hint in MEMORY_SECRET_HINTS):
+        return True
+    if re.search(r"\b(?:sk|ak|pk|ghp|xoxb|eyJ)[A-Za-z0-9_\-]{18,}\b", normalized):
+        return True
+    if re.search(r"\b\d{6}\b", normalized) and any(word in normalized for word in ("验证码", "code", "otp")):
+        return True
+    return False
+
+
+def is_realtime_memory_text(text: str) -> bool:
+    value = str(text or "").lower()
+    return any(hint in value for hint in MEMORY_REALTIME_HINTS)
+
+
+def looks_like_question(text: str) -> bool:
+    value = str(text or "")
+    return bool(re.search(r"[?？]|吗$|么$|什么|为什么|怎么|哪里|哪儿|多少|是否", value.strip()))
+
+
+def has_stable_memory_signal(text: str) -> bool:
+    return any(hint in str(text or "") for hint in MEMORY_STABLE_HINTS)
+
+
+def has_strong_stable_memory_signal(text: str) -> bool:
+    return any(hint in str(text or "") for hint in MEMORY_STRONG_STABLE_HINTS)
+
+
+def is_keepable_event_memory(text: str) -> bool:
+    value = str(text or "")
+    if any(hint in value for hint in MEMORY_EVENT_KEEP_HINTS):
+        return True
+    return bool(re.search(r"\d{1,2}月\d{1,2}[日号]|周[一二三四五六日天]|星期[一二三四五六日天]", value))
+
+
 def is_low_value_memory_text(text: str) -> bool:
     value = re.sub(r"\s+", "", text)
     if len(value) < 3:
         return True
     if re.fullmatch(r"[0-9a-zA-Z，,。.！!？?~～哈啊嗯额呃哦]+", value):
+        return True
+    if re.fullmatch(r"(哈|哈哈|啊|哦|嗯|额|呃|好|行|可以|谢谢|你好|早安|晚安|测试)+", value):
         return True
     low_value = {
         "你好",
@@ -715,6 +876,12 @@ def is_low_value_memory_text(text: str) -> bool:
         "可以",
         "嗯嗯",
         "不用啦",
+        "早安",
+        "晚安",
+        "测试",
+        "没事",
+        "还行",
+        "马马虎虎",
     }
     return value.lower() in low_value
 

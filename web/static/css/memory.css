@@ -54,6 +54,19 @@
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--surface-muted) 90%, var(--primary) 10%), transparent 70%),
     var(--surface-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms, transform 140ms;
+}
+.memory-stat-card:hover,
+.memory-stat-card.active {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--surface) 84%, var(--primary) 16%), transparent 74%),
+    var(--surface);
+}
+.memory-stat-card:hover {
+  transform: translateY(-1px);
 }
 .memory-stat-card span {
   color: var(--text);

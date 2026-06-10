@@ -16,6 +16,7 @@ import {
   loadProactiveEvents,
   loadReminders,
   loadServices,
+  loadStickers,
   loadToolConfig,
   resolveTool,
   saveConfig,
@@ -26,6 +27,8 @@ import {
   updateBotProfile,
   updateServiceConfig,
   uploadAvatar,
+  uploadSticker,
+  deleteSticker,
 } from "./api.js";
 
 /* ---- init ---- */
@@ -38,6 +41,7 @@ const SETTINGS_SECTION_LABELS = {
   appearance: "外观",
   engine: "本地模型引擎",
   tools: "联网工具",
+  dialogFeatures: "对话能力",
   proactive: "主动性",
   botProfiles: "Bot 人格",
   prompt: "Prompt 配置",
@@ -45,7 +49,7 @@ const SETTINGS_SECTION_LABELS = {
   vad: "语音检测",
   commands: "服务命令",
 };
-const MODAL_SETTING_SECTIONS = new Set(["proactive", "botProfiles", "prompt", "tts", "vad", "commands"]);
+const MODAL_SETTING_SECTIONS = new Set(["dialogFeatures", "proactive", "botProfiles", "prompt", "tts", "vad", "commands"]);
 const CHAT_IDENTITY = {
   user: {
     nameKey: "web_user_name",
@@ -81,7 +85,7 @@ export async function initSettings() {
   });
 
   const configResult = await loadConfig();
-  await Promise.allSettled([loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders()]);
+  await Promise.allSettled([loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders(), loadStickers()]);
   syncToolProviderDraft();
   fillConfig(configResult.config);
   renderToolProviders();
@@ -95,6 +99,7 @@ export async function initSettings() {
   await loadServices();
   renderProfileList();
   renderBotProfiles();
+  renderStickerLibrary();
   setText("topStatus", configResult.ok ? "后端在线" : "静态预览");
 }
 
@@ -123,6 +128,8 @@ function setupSettingsEvents() {
   $("#proactiveTestBtn")?.addEventListener("click", runProactiveTest);
   $("#createReminderBtn")?.addEventListener("click", handleCreateReminder);
   $("#addBotProfileBtn")?.addEventListener("click", addBotProfile);
+  $("#stickerUploadBtn")?.addEventListener("click", () => $("#stickerFileInput")?.click());
+  $("#stickerFileInput")?.addEventListener("change", handleStickerUpload);
   bindChatIdentityEvents();
   $("#toolProviderCancelBtn")?.addEventListener("click", closeToolProviderModal);
   $("#toolProviderApplyBtn")?.addEventListener("click", applyToolProviderModal);
@@ -235,6 +242,7 @@ function refreshSettingsOverview() {
   setText("appearanceSummary", `${window.__branchwhisper?.getTheme?.() === "light" ? "浅色" : "深色"} · 字号 ${value("uiFontScale", 1)}`);
   setText("engineSummary", `${value("llmModel", "本地模型")} · ${value("historyTurns", 8)} 轮`);
   setText("toolsSummary", `${value("toolsEnabled", "true") === "true" ? "已启用" : "已关闭"} · ${Object.keys(toolProviderDraft || {}).filter((key) => (toolProviderDraft[key] || {}).enabled !== false).length} 项`);
+  setText("dialogFeaturesSummary", `${value("visionEnabled", "true") === "true" ? "图片开" : "图片关"} · 表情 ${value("stickerActivity", "active")} · 压缩 ${value("contextCompactionEnabled", "true") === "true" ? "开" : "关"}`);
   setText("proactiveSummary", `${value("proactiveEnabled", "false") === "true" ? "已开启" : "已关闭"} · ${value("followupLevel", "restrained")}`);
   setText("botProfileSummary", `${(state.botProfiles || []).length || 1} 个 Profile`);
   setText("promptSummary", `${(value("systemPrompt", "") || "").length} 字`);
@@ -262,6 +270,24 @@ const CONFIG_FIELD_MAP = [
   { key: "system", id: "systemPrompt" },
   { key: "tools_enabled", id: "toolsEnabled" },
   { key: "tools_auto_call", id: "toolsAutoCall" },
+  { key: "vision_enabled", id: "visionEnabled" },
+  { key: "vision_url", id: "visionUrl" },
+  { key: "vision_model", id: "visionModel" },
+  { key: "vision_timeout", id: "visionTimeout" },
+  { key: "vision_max_image_mb", id: "visionMaxImageMb" },
+  { key: "vision_memory_extract_enabled", id: "visionMemoryExtractEnabled" },
+  { key: "stickers_enabled", id: "stickersEnabled" },
+  { key: "sticker_activity", id: "stickerActivity" },
+  { key: "sticker_cooldown_sec", id: "stickerCooldownSec" },
+  { key: "sticker_daily_limit", id: "stickerDailyLimit" },
+  { key: "sticker_max_streak", id: "stickerMaxStreak" },
+  { key: "sticker_custom_probability", id: "stickerCustomProbability" },
+  { key: "context_compaction_enabled", id: "contextCompactionEnabled" },
+  { key: "context_window_tokens", id: "contextWindowTokens" },
+  { key: "context_compaction_ratio", id: "contextCompactionRatio" },
+  { key: "context_keep_recent_turns", id: "contextKeepRecentTurns" },
+  { key: "context_summary_max_chars", id: "contextSummaryMaxChars" },
+  { key: "context_summary_max_layers", id: "contextSummaryMaxLayers" },
   { key: "tts_url", id: "ttsUrl" },
   { key: "tts_speed", id: "ttsSpeed" },
   { key: "tts_seed", id: "ttsSeed" },
@@ -278,7 +304,7 @@ const CONFIG_FIELD_MAP = [
   { key: "tools_max_result_chars", id: "toolsMaxResultChars" },
 ];
 
-const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars"]);
+const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars", "vision_timeout", "vision_max_image_mb", "sticker_cooldown_sec", "sticker_daily_limit", "sticker_max_streak", "sticker_custom_probability", "context_window_tokens", "context_compaction_ratio", "context_keep_recent_turns", "context_summary_max_chars", "context_summary_max_layers"]);
 
 function fillConfig(config) {
   for (const f of CONFIG_FIELD_MAP) {
@@ -875,6 +901,58 @@ function isChecked(id) {
   return Boolean(document.getElementById(id)?.checked);
 }
 
+/* ---- sticker library ---- */
+
+function renderStickerLibrary() {
+  const host = $("#stickerLibraryList");
+  if (!host) return;
+  host.replaceChildren();
+  const stickers = state.stickers || [];
+  if (!stickers.length) {
+    const empty = document.createElement("div");
+    empty.className = "sticker-library-empty";
+    empty.textContent = "还没有表情包。上传几张后，枝语会按标签自动挑。";
+    host.appendChild(empty);
+    return;
+  }
+  for (const sticker of stickers.slice(0, 24)) {
+    const item = document.createElement("div");
+    item.className = "sticker-library-item";
+    const img = document.createElement("img");
+    img.src = sticker.url;
+    img.alt = sticker.tag || sticker.name || "表情包";
+    const meta = document.createElement("span");
+    meta.textContent = `${sticker.tag || "默认"} · ${sticker.use_count || 0}`;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.title = "删除表情包";
+    del.appendChild(createIcon("trash-2"));
+    del.addEventListener("click", async () => {
+      await deleteSticker(sticker.id);
+      renderStickerLibrary();
+    });
+    item.append(img, meta, del);
+    host.appendChild(item);
+  }
+  renderIcons();
+}
+
+async function handleStickerUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    const tag = value("stickerTagInput", "默认").trim() || "默认";
+    await uploadSticker(dataUrl, tag, file.name);
+    renderStickerLibrary();
+    showToast("表情包已加入素材库", "success");
+  } catch (error) {
+    showToast(`表情包上传失败：${error.message}`, "error");
+  } finally {
+    event.target.value = "";
+  }
+}
+
 function renderBotProfiles() {
   const host = $("#botProfileList");
   if (!host) return;
@@ -965,13 +1043,14 @@ async function saveSettingsPage(options = {}) {
     await saveProactiveConfig(collectProactiveConfig());
     await saveBotProfiles();
     for (const s of state.services) { await updateServiceConfig(s.id, collectProfileConfig(s.id)); }
-    await Promise.allSettled([loadConfig(), loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders()]);
+    await Promise.allSettled([loadConfig(), loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders(), loadStickers()]);
     syncToolProviderDraft();
     fillConfig(state.currentConfig);
     renderToolProviders();
     fillProactiveConfig();
     renderProactiveEvents();
     renderReminders();
+    renderStickerLibrary();
     await loadServices(); renderProfileList();
     renderBotProfiles();
     refreshSettingsOverview();

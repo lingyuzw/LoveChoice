@@ -117,6 +117,36 @@ export async function uploadAvatar(dataUrl) {
   });
 }
 
+export async function uploadChatImage(dataUrl) {
+  return fetchJson("/api/assets/chat-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data_url: dataUrl }),
+  });
+}
+
+export async function loadStickers() {
+  const data = await fetchJson("/api/stickers");
+  state.stickers = data.stickers || [];
+  return state.stickers;
+}
+
+export async function uploadSticker(dataUrl, tag = "默认", name = "") {
+  const data = await fetchJson("/api/stickers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data_url: dataUrl, tag, name }),
+  });
+  state.stickers = data.stickers || state.stickers || [];
+  return data.sticker;
+}
+
+export async function deleteSticker(stickerId) {
+  const data = await fetchJson(`/api/stickers/${encodeURIComponent(stickerId)}`, { method: "DELETE" });
+  state.stickers = data.stickers || state.stickers || [];
+  return data.ok;
+}
+
 export async function resolveTool(text) {
   return fetchJson("/api/tools/resolve", {
     method: "POST",

@@ -78,12 +78,13 @@ function handleDialogEvent(data) {
     case "vad_start": state.busy = false; setText("vadLabel", "speech"); setText("topStatus", "收音"); pipeline("vad", "正在听"); break;
     case "vad_end": setText("vadLabel", `${data.duration_ms || 0}ms`); setText("topStatus", "识别"); pipeline("asr", "识别中"); state.busy = true; break;
     case "vad_short": setText("vadLabel", "short"); break;
-    case "user": addMsg("user", data.text || ""); state.currentAssistant = null; pipeline("llm", "思考中"); break;
+    case "user": addMsg("user", data.text || "", { attachments: data.attachments || [] }); state.currentAssistant = null; pipeline("llm", "思考中"); break;
     case "assistant_start":
       window.clearTimeout(state.releaseTimer); state.assistantActive = true;
       state.interrupting = false; state.dropAudioUntilNextAssistant = false;
       state.currentAssistant = addMsg("assistant", ""); setText("topStatus", "生成"); pipeline("llm", "生成中"); break;
     case "llm_delta": pipeline("llm", "输出中"); appendAssistant(data.text || ""); break;
+    case "assistant_attachment": appendAssistantAttachments(data.attachments || []); break;
     case "audio_format": state.ttsSampleRate = Number(data.sample_rate || 24000); setText("topStatus", "播放"); pipeline("tts", "播放中"); break;
     case "metric": setMetric(data.name, data.value); break;
     case "error": showToast(data.message || "出错", "error"); pipeline("error"); break;
@@ -165,7 +166,10 @@ function addMsg(role, text, meta = {}) {
   const node = document.createElement("div");
   node.className = `message ${role}`;
   node.textContent = text;
-  body.append(label, node);
+  if (text || role === "assistant") body.append(label, node);
+  else body.append(label);
+  const attachmentsNode = renderMessageAttachments(meta.attachments || []);
+  if (attachmentsNode) body.appendChild(attachmentsNode);
   row.append(avatar, body);
   t.appendChild(row);
   scrollTranscript();
@@ -200,17 +204,27 @@ function firstIdentityChar(name, fallback) {
   return chars[0] || fallback;
 }
 function appendAssistant(text) { if (!state.currentAssistant) state.currentAssistant = addMsg("assistant", ""); if (state.currentAssistant) state.currentAssistant.textContent += text; scrollTranscript(); }
+function appendAssistantAttachments(attachments) {
+  if (!attachments?.length) return;
+  if (!state.currentAssistant) state.currentAssistant = addMsg("assistant", "");
+  const body = state.currentAssistant?.closest(".message-body");
+  if (!body) return;
+  const node = renderMessageAttachments(attachments);
+  if (node) body.appendChild(node);
+  scrollTranscript();
+}
 export function clearTranscript() {
   const t = $("#transcript");
   if (t) t.replaceChildren();
   state.currentAssistant = null;
 }
 function scrollTranscript() { const t = $("#transcript"); if (t) t.scrollTop = t.scrollHeight; }
-function scrollTranscriptSoon() {
+export function scrollTranscriptToBottom() {
   scrollTranscript();
   requestAnimationFrame(() => {
     scrollTranscript();
     window.setTimeout(scrollTranscript, 80);
+    window.setTimeout(scrollTranscript, 220);
   });
 }
 function renderTranscript(msgs) {
@@ -218,7 +232,40 @@ function renderTranscript(msgs) {
   for (const m of msgs) {
     if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || "", m);
   }
-  scrollTranscriptSoon();
+  scrollTranscriptToBottom();
+}
+
+function renderMessageAttachments(attachments) {
+  const items = (attachments || []).filter((item) => item && (item.url || item.summary));
+  if (!items.length) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "message-attachments";
+  for (const item of items) {
+    if (item.type === "image") {
+      const figure = document.createElement("figure");
+      figure.className = "message-image";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = item.summary || item.name || "图片";
+      figure.appendChild(img);
+      if (item.summary) {
+        const cap = document.createElement("figcaption");
+        cap.textContent = item.summary;
+        figure.appendChild(cap);
+      }
+      wrap.appendChild(figure);
+    } else if (item.type === "sticker") {
+      const sticker = document.createElement("div");
+      sticker.className = "message-sticker";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = item.tag || item.name || "表情包";
+      sticker.title = item.tag || item.name || "表情包";
+      sticker.appendChild(img);
+      wrap.appendChild(sticker);
+    }
+  }
+  return wrap;
 }
 
 /* ---- conversation ---- */

@@ -72,6 +72,8 @@ class SessionSettings:
     web_assistant_avatar_url: str
     memory_enabled: bool
     memory_extract_enabled: bool
+    memory_admission_enabled: bool
+    memory_min_importance: float
     memory_short_to_mid_days: int
     memory_short_to_mid_count: int
     memory_mid_to_long_days: int
@@ -80,6 +82,24 @@ class SessionSettings:
     memory_mid_downgrade_days: int
     memory_long_downgrade_days: int
     memory_max_context_items: int
+    context_compaction_enabled: bool
+    context_window_tokens: int
+    context_compaction_ratio: float
+    context_keep_recent_turns: int
+    context_summary_max_chars: int
+    context_summary_max_layers: int
+    vision_enabled: bool
+    vision_url: str
+    vision_model: str
+    vision_timeout: float
+    vision_max_image_mb: float
+    vision_memory_extract_enabled: bool
+    stickers_enabled: bool
+    sticker_activity: str
+    sticker_cooldown_sec: int
+    sticker_daily_limit: int
+    sticker_max_streak: int
+    sticker_custom_probability: float
     tools_enabled: bool
     tools_auto_call: bool
     tools_timeout: float
@@ -120,6 +140,8 @@ class SessionSettings:
             web_assistant_avatar_url=args.web_assistant_avatar_url,
             memory_enabled=args.memory_enabled,
             memory_extract_enabled=args.memory_extract_enabled,
+            memory_admission_enabled=args.memory_admission_enabled,
+            memory_min_importance=args.memory_min_importance,
             memory_short_to_mid_days=args.memory_short_to_mid_days,
             memory_short_to_mid_count=args.memory_short_to_mid_count,
             memory_mid_to_long_days=args.memory_mid_to_long_days,
@@ -128,6 +150,24 @@ class SessionSettings:
             memory_mid_downgrade_days=args.memory_mid_downgrade_days,
             memory_long_downgrade_days=args.memory_long_downgrade_days,
             memory_max_context_items=args.memory_max_context_items,
+            context_compaction_enabled=args.context_compaction_enabled,
+            context_window_tokens=args.context_window_tokens,
+            context_compaction_ratio=args.context_compaction_ratio,
+            context_keep_recent_turns=args.context_keep_recent_turns,
+            context_summary_max_chars=args.context_summary_max_chars,
+            context_summary_max_layers=args.context_summary_max_layers,
+            vision_enabled=args.vision_enabled,
+            vision_url=args.vision_url,
+            vision_model=args.vision_model,
+            vision_timeout=args.vision_timeout,
+            vision_max_image_mb=args.vision_max_image_mb,
+            vision_memory_extract_enabled=args.vision_memory_extract_enabled,
+            stickers_enabled=args.stickers_enabled,
+            sticker_activity=args.sticker_activity,
+            sticker_cooldown_sec=args.sticker_cooldown_sec,
+            sticker_daily_limit=args.sticker_daily_limit,
+            sticker_max_streak=args.sticker_max_streak,
+            sticker_custom_probability=args.sticker_custom_probability,
             tools_enabled=args.tools_enabled,
             tools_auto_call=args.tools_auto_call,
             tools_timeout=args.tools_timeout,
@@ -167,6 +207,12 @@ class SessionSettings:
                     value = float(value)
                 if key == "ui_font_scale":
                     value = max(0.85, min(1.35, float(value)))
+                if key == "context_compaction_ratio":
+                    value = max(0.4, min(0.95, float(value)))
+                if key == "sticker_activity":
+                    value = str(value) if str(value) in {"off", "low", "standard", "active", "very_active", "custom"} else "active"
+                if key == "sticker_custom_probability":
+                    value = max(0.0, min(1.0, float(value)))
             except (TypeError, ValueError):
                 continue
             setattr(self, key, value)
@@ -273,6 +319,8 @@ def add_settings_args(parser) -> None:
 
     parser.add_argument("--memory-enabled", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--memory-extract-enabled", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--memory-admission-enabled", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--memory-min-importance", type=float, default=0.55)
     parser.add_argument("--memory-short-to-mid-days", type=int, default=60)
     parser.add_argument("--memory-short-to-mid-count", type=int, default=3)
     parser.add_argument("--memory-mid-to-long-days", type=int, default=180)
@@ -281,6 +329,27 @@ def add_settings_args(parser) -> None:
     parser.add_argument("--memory-mid-downgrade-days", type=int, default=180)
     parser.add_argument("--memory-long-downgrade-days", type=int, default=365)
     parser.add_argument("--memory-max-context-items", type=int, default=12)
+
+    parser.add_argument("--context-compaction-enabled", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--context-window-tokens", type=int, default=8192)
+    parser.add_argument("--context-compaction-ratio", type=float, default=0.70)
+    parser.add_argument("--context-keep-recent-turns", type=int, default=10)
+    parser.add_argument("--context-summary-max-chars", type=int, default=1200)
+    parser.add_argument("--context-summary-max-layers", type=int, default=3)
+
+    parser.add_argument("--vision-enabled", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--vision-url", default="http://127.0.0.1:8081/v1/chat/completions")
+    parser.add_argument("--vision-model", default="qwen-vl")
+    parser.add_argument("--vision-timeout", type=float, default=45.0)
+    parser.add_argument("--vision-max-image-mb", type=float, default=8.0)
+    parser.add_argument("--vision-memory-extract-enabled", action=argparse.BooleanOptionalAction, default=False)
+
+    parser.add_argument("--stickers-enabled", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--sticker-activity", choices=["off", "low", "standard", "active", "very_active", "custom"], default="active")
+    parser.add_argument("--sticker-cooldown-sec", type=int, default=90)
+    parser.add_argument("--sticker-daily-limit", type=int, default=60)
+    parser.add_argument("--sticker-max-streak", type=int, default=2)
+    parser.add_argument("--sticker-custom-probability", type=float, default=0.65)
 
     parser.add_argument("--tools-enabled", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--tools-auto-call", action=argparse.BooleanOptionalAction, default=True)
