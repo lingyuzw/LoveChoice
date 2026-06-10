@@ -126,6 +126,12 @@
               </div>
               <div class="memory-stats-grid" id="memoryStatsGrid"></div>
               <div class="memory-filter-stack">
+                <label><span>模型模式</span>
+                  <select id="memoryModeFilter">
+                    <option value="local">本地模型记忆</option>
+                    <option value="api">API 模型记忆</option>
+                  </select>
+                </label>
                 <label><span>层级筛选</span>
                   <select id="memoryLayerFilter">
                     <option value="">全部层级</option>
@@ -330,7 +336,19 @@
               </div>
             </article>
             <article class="settings-panel" id="engine">
-              <div class="panel-head"><div><p class="eyebrow">Local Model Engine</p><h2>本地模型引擎</h2></div><span class="soft-badge" id="engineSummary">Local only</span></div>
+              <div class="panel-head"><div><p class="eyebrow">Model Engine</p><h2>对话模型</h2></div><span class="soft-badge" id="engineSummary">Local only</span></div>
+              <div class="dialog-mode-panel">
+                <div class="dialog-mode-copy">
+                  <strong>对话模式</strong>
+                  <small>同一时间只启用一种模型；本地/API 记忆库自动隔离。</small>
+                </div>
+                <div class="theme-toggle-group dialog-mode-toggle" id="dialogModeToggle">
+                  <button type="button" data-dialog-mode="local"><i data-lucide="hard-drive"></i>本地模型</button>
+                  <button type="button" data-dialog-mode="api"><i data-lucide="cloud"></i>API 模型</button>
+                </div>
+                <input id="dialogMode" type="hidden" value="local" />
+                <label class="thinking-toggle"><input id="thinkingEnabled" type="checkbox" /> 启用思考模式，仅输出最终结果</label>
+              </div>
               <div class="form-grid">
                 <label><span>ASR Mode</span><select id="asrMode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
                 <label><span>ASR Model</span><input id="asrModel" type="text" /></label>
@@ -348,6 +366,17 @@
                   </div>
                 </label>
               </div>
+              <section class="api-engine-card" id="apiEngineCard">
+                <div class="appearance-card-head"><strong>OpenAI-compatible API</strong><small>DeepSeek、通义兼容接口、自建网关都可填这里</small></div>
+                <div class="form-grid compact">
+                  <label class="wide"><span>API Chat Completions URL</span><input id="apiLlmUrl" type="text" placeholder="https://api.example.com/v1/chat/completions" /></label>
+                  <label><span>API Model</span><input id="apiLlmModel" type="text" placeholder="model-name" /></label>
+                  <label><span>API Key</span><input id="apiLlmApiKey" type="password" placeholder="留空则保留已保存 Key" /></label>
+                  <label><span>API Temperature</span><input id="apiTemperature" type="number" min="0" max="1.5" step="0.01" /></label>
+                  <label><span>API Max Tokens</span><input id="apiMaxTokens" type="number" min="32" max="8192" step="1" /></label>
+                  <label><span>API History Turns</span><input id="apiHistoryTurns" type="number" min="1" max="40" step="1" /></label>
+                </div>
+              </section>
             </article>
             <article class="settings-panel" id="tools">
               <div class="panel-head"><div><p class="eyebrow">Network Tools</p><h2>联网工具</h2></div><span class="soft-badge" id="toolsSummary">工具状态</span></div>

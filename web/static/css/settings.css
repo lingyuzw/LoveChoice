@@ -943,3 +943,47 @@
     grid-template-columns: 1fr;
   }
 }
+.dialog-mode-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+}
+
+.dialog-mode-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.dialog-mode-copy small,
+.thinking-toggle {
+  color: var(--muted);
+}
+
+.dialog-mode-toggle {
+  justify-self: end;
+}
+
+.thinking-toggle {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.api-engine-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+
+.muted-panel {
+  opacity: 0.58;
+}

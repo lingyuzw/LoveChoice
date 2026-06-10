@@ -151,6 +151,13 @@ function setupSettingsEvents() {
     window.clearTimeout(state.modelFileSearchTimer);
     state.modelFileSearchTimer = window.setTimeout(refreshModelFilePicker, 220);
   });
+  document.querySelectorAll("[data-dialog-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setValue("dialogMode", button.dataset.dialogMode || "local");
+      syncDialogModeUi();
+      refreshSettingsOverview();
+    });
+  });
   bindChatIdentityEvents();
   $("#toolProviderCancelBtn")?.addEventListener("click", closeToolProviderModal);
   $("#toolProviderApplyBtn")?.addEventListener("click", applyToolProviderModal);
@@ -261,7 +268,10 @@ function restoreSettingsSectionOrder() {
 
 function refreshSettingsOverview() {
   setText("appearanceSummary", `${window.__branchwhisper?.getTheme?.() === "light" ? "浅色" : "深色"} · 字号 ${value("uiFontScale", 1)}`);
-  setText("engineSummary", `${value("llmModel", "本地模型")} · ${value("historyTurns", 8)} 轮`);
+  const mode = value("dialogMode", "local") === "api" ? "API" : "本地";
+  const model = mode === "API" ? value("apiLlmModel", "API 模型") : value("llmModel", "本地模型");
+  const turns = mode === "API" ? value("apiHistoryTurns", 8) : value("historyTurns", 8);
+  setText("engineSummary", `${mode} · ${model || "未命名模型"} · ${turns} 轮`);
   setText("toolsSummary", `${value("toolsEnabled", "true") === "true" ? "已启用" : "已关闭"} · ${Object.keys(toolProviderDraft || {}).filter((key) => (toolProviderDraft[key] || {}).enabled !== false).length} 项`);
   setText("dialogFeaturesSummary", `${value("visionEnabled", "true") === "true" ? "图片开" : "图片关"} · 表情 ${value("stickerActivity", "active")} · 压缩 ${value("contextCompactionEnabled", "true") === "true" ? "开" : "关"}`);
   setText("proactiveSummary", `${value("proactiveEnabled", "false") === "true" ? "已开启" : "已关闭"} · ${value("followupLevel", "restrained")}`);
@@ -274,14 +284,32 @@ function refreshSettingsOverview() {
   setText("stickerLibrarySummary", `${stickerCount} 个素材 · 按标签管理，后续可扩展角色素材包`);
 }
 
+function syncDialogModeUi() {
+  const mode = value("dialogMode", "local") === "api" ? "api" : "local";
+  setValue("dialogMode", mode);
+  document.querySelectorAll("[data-dialog-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.dialogMode === mode);
+  });
+  const apiCard = $("#apiEngineCard");
+  if (apiCard) apiCard.classList.toggle("muted-panel", mode !== "api");
+}
+
 /* ---- config form ---- */
 
 const CONFIG_FIELD_MAP = [
   { key: "asr_mode", id: "asrMode" },
   { key: "asr_url", id: "asrUrl" },
   { key: "asr_model", id: "asrModel" },
+  { key: "dialog_mode", id: "dialogMode" },
+  { key: "thinking_enabled", id: "thinkingEnabled" },
   { key: "llm_url", id: "llmUrl" },
   { key: "llm_model", id: "llmModel" },
+  { key: "api_llm_url", id: "apiLlmUrl" },
+  { key: "api_llm_model", id: "apiLlmModel" },
+  { key: "api_llm_api_key", id: "apiLlmApiKey", secret: true },
+  { key: "api_temperature", id: "apiTemperature" },
+  { key: "api_max_tokens", id: "apiMaxTokens" },
+  { key: "api_history_turns", id: "apiHistoryTurns" },
   { key: "temperature", id: "temperature" },
   { key: "max_tokens", id: "maxTokens" },
   { key: "history_turns", id: "historyTurns" },
@@ -327,16 +355,26 @@ const CONFIG_FIELD_MAP = [
   { key: "tools_max_result_chars", id: "toolsMaxResultChars" },
 ];
 
-const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars", "vision_timeout", "vision_max_image_mb", "sticker_cooldown_sec", "sticker_daily_limit", "sticker_max_streak", "sticker_custom_probability", "context_window_tokens", "context_compaction_ratio", "context_keep_recent_turns", "context_summary_max_chars", "context_summary_max_layers"]);
+const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "api_temperature", "api_max_tokens", "api_history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars", "vision_timeout", "vision_max_image_mb", "sticker_cooldown_sec", "sticker_daily_limit", "sticker_max_streak", "sticker_custom_probability", "context_window_tokens", "context_compaction_ratio", "context_keep_recent_turns", "context_summary_max_chars", "context_summary_max_layers"]);
+const BOOL_FIELDS = new Set(["thinking_enabled"]);
 
 function fillConfig(config) {
   for (const f of CONFIG_FIELD_MAP) {
     if (f.virtual) continue;
     if (!document.getElementById(f.id)) continue;
     const val = config[f.key] !== undefined ? config[f.key] : DEFAULT_CONFIG[f.key];
-    setValue(f.id, val);
+    const el = document.getElementById(f.id);
+    if (f.secret) {
+      el.value = "";
+      el.placeholder = config[`${f.key}_masked`] || (config[`${f.key}_set`] ? "已保存，留空不修改" : "未设置");
+    } else if (el?.type === "checkbox") {
+      el.checked = Boolean(val);
+    } else {
+      setValue(f.id, val);
+    }
   }
   renderChatIdentities(config);
+  syncDialogModeUi();
   syncModelFileInput();
 }
 
@@ -346,7 +384,13 @@ function collectConfig() {
     if (f.virtual) continue;
     if (!document.getElementById(f.id)) continue;
     const raw = value(f.id, "");
-    if (NUM_FIELDS.has(f.key)) {
+    const el = document.getElementById(f.id);
+    if (f.secret && !String(raw || "").trim()) {
+      continue;
+    }
+    if (BOOL_FIELDS.has(f.key)) {
+      result[f.key] = Boolean(el?.checked);
+    } else if (NUM_FIELDS.has(f.key)) {
       const parsed = Number(raw);
       result[f.key] = Number.isFinite(parsed) ? parsed : DEFAULT_CONFIG[f.key];
     } else {

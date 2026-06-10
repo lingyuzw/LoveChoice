@@ -67,7 +67,8 @@ def send_weixin_voice(
 
     if proc.returncode != 0 or not payload.get("ok"):
         detail = str(payload.get("error") or stderr or f"exit {proc.returncode}")
-        raise WeixinVoiceSendError(detail[:240])
+        stage = str(payload.get("stage") or "unknown")
+        raise WeixinVoiceSendError(f"{stage}: {detail[:220]}")
     return payload
 
 

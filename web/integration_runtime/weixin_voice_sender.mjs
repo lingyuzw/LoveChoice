@@ -17,7 +17,7 @@ const MESSAGE_TYPE_BOT = 2;
 const MESSAGE_STATE_FINISH = 2;
 const ITEM_VOICE = 3;
 const UPLOAD_MEDIA_TYPE_VOICE = 4;
-const VOICE_ENCODE_OGG_SPEEX = 8;
+const VOICE_ENCODE_OGG_OPUS = 8;
 const MAX_VOICE_SECONDS = 60;
 
 function usage() {
@@ -47,7 +47,7 @@ function parseArgs(argv) {
 }
 
 function fail(message, extra = {}) {
-  process.stdout.write(JSON.stringify({ ok: false, error: String(message), ...extra }));
+  process.stdout.write(JSON.stringify({ ok: false, error: String(message), stage: extra.stage || "unknown", ...extra }));
   process.exit(1);
 }
 
@@ -204,8 +204,12 @@ async function sendVoice(args) {
   await fs.access(voiceFile);
 
   const started = Date.now();
-  const oggPath = await transcodeToOggOpus(voiceFile);
+  let oggPath = "";
   try {
+    oggPath = await transcodeToOggOpus(voiceFile).catch((error) => {
+      error.stage = "transcode";
+      throw error;
+    });
     const playtimeMs = await probeDurationMs(oggPath);
     const plaintext = await fs.readFile(oggPath);
     const rawsize = plaintext.length;
@@ -228,6 +232,9 @@ async function sendVoice(args) {
         no_need_thumb: true,
         aeskey: aeskey.toString("hex"),
       },
+    }).catch((error) => {
+      error.stage = "getuploadurl";
+      throw error;
     });
     const uploadFullUrl = String(uploadUrlResp.upload_full_url || "").trim();
     const uploadParam = uploadUrlResp.upload_param;
@@ -239,6 +246,9 @@ async function sendVoice(args) {
       filekey,
       cdnBaseUrl,
       aeskey,
+    }).catch((error) => {
+      error.stage = "cdn_upload";
+      throw error;
     });
     const uploadMs = Date.now() - uploadStart;
     const sendStart = Date.now();
@@ -260,10 +270,10 @@ async function sendVoice(args) {
               voice_item: {
                 media: {
                   encrypt_query_param: upload.downloadParam,
-                  aes_key: Buffer.from(aeskey.toString("hex")).toString("base64"),
+                  aes_key: aeskey.toString("base64"),
                   encrypt_type: 1,
                 },
-                encode_type: VOICE_ENCODE_OGG_SPEEX,
+                encode_type: VOICE_ENCODE_OGG_OPUS,
                 sample_rate: 48000,
                 playtime: playtimeMs,
                 text,
@@ -275,10 +285,17 @@ async function sendVoice(args) {
         base_info: buildBaseInfo(),
       },
       timeoutMs: 20_000,
+    }).catch((error) => {
+      error.stage = "sendmessage";
+      throw error;
     });
     return {
       ok: true,
       message_id: clientId,
+      stage: "sent",
+      transcode_format: "ogg_opus",
+      encode_type: VOICE_ENCODE_OGG_OPUS,
+      sample_rate: 48000,
       playtime_ms: playtimeMs,
       raw_size: rawsize,
       cipher_size: upload.ciphertextSize,
@@ -287,7 +304,7 @@ async function sendVoice(args) {
       total_ms: Date.now() - started,
     };
   } finally {
-    await fs.unlink(oggPath).catch(() => {});
+    if (oggPath) await fs.unlink(oggPath).catch(() => {});
   }
 }
 
@@ -301,7 +318,7 @@ async function main() {
     const result = args.selfTest ? await selfTest() : await sendVoice(args);
     process.stdout.write(JSON.stringify(result));
   } catch (error) {
-    fail(error?.message || String(error));
+    fail(error?.message || String(error), { stage: error?.stage || "unknown" });
   }
 }
 

@@ -61,6 +61,14 @@ class SessionSettings:
     llm_url: str
     llm_model: str
     llm_api_key: str
+    dialog_mode: str
+    api_llm_url: str
+    api_llm_model: str
+    api_llm_api_key: str
+    api_temperature: float
+    api_max_tokens: int
+    api_history_turns: int
+    thinking_enabled: bool
     temperature: float
     max_tokens: int
     history_turns: int
@@ -129,6 +137,14 @@ class SessionSettings:
             llm_url=args.llm_url,
             llm_model=args.llm_model,
             llm_api_key=args.llm_api_key,
+            dialog_mode=args.dialog_mode,
+            api_llm_url=args.api_llm_url,
+            api_llm_model=args.api_llm_model,
+            api_llm_api_key=args.api_llm_api_key,
+            api_temperature=args.api_temperature,
+            api_max_tokens=args.api_max_tokens,
+            api_history_turns=args.api_history_turns,
+            thinking_enabled=args.thinking_enabled,
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             history_turns=args.history_turns,
@@ -213,6 +229,8 @@ class SessionSettings:
                     value = str(value) if str(value) in {"off", "low", "standard", "active", "very_active", "custom"} else "active"
                 if key == "sticker_custom_probability":
                     value = max(0.0, min(1.0, float(value)))
+                if key == "dialog_mode":
+                    value = str(value) if str(value) in {"local", "api"} else "local"
             except (TypeError, ValueError):
                 continue
             setattr(self, key, value)
@@ -260,26 +278,79 @@ def mask_secret(value: str) -> str:
 def public_settings(settings: SessionSettings) -> dict:
     data = asdict(settings)
     api_key = str(data.pop("llm_api_key", "") or "")
+    remote_api_key = str(data.pop("api_llm_api_key", "") or "")
     data["llm_api_key"] = ""
     data["llm_api_key_set"] = bool(api_key.strip())
     data["llm_api_key_masked"] = mask_secret(api_key)
+    data["api_llm_api_key"] = ""
+    data["api_llm_api_key_set"] = bool(remote_api_key.strip())
+    data["api_llm_api_key_masked"] = mask_secret(remote_api_key)
     return data
 
 
 def update_llm_api_key(settings: SessionSettings, payload: dict) -> None:
-    if "llm_api_key" not in payload:
+    update_secret_field(settings, payload, "llm_api_key")
+    update_secret_field(settings, payload, "api_llm_api_key")
+
+
+def update_secret_field(settings: SessionSettings, payload: dict, key: str) -> None:
+    if key not in payload:
         return
-    raw = payload.pop("llm_api_key")
+    raw = payload.pop(key)
     if raw is None:
         return
     value = str(raw).strip()
     if not value or MASKED_SECRET_CHARS in value:
         return
-    settings.llm_api_key = value
+    setattr(settings, key, value)
+
+
+def active_dialog_mode(settings: SessionSettings) -> str:
+    return "api" if str(getattr(settings, "dialog_mode", "local")) == "api" else "local"
+
+
+def memory_mode(settings: SessionSettings) -> str:
+    return active_dialog_mode(settings)
+
+
+def active_llm_url(settings: SessionSettings) -> str:
+    if active_dialog_mode(settings) == "api":
+        return settings.api_llm_url or settings.llm_url
+    return settings.llm_url
+
+
+def active_llm_model(settings: SessionSettings) -> str:
+    if active_dialog_mode(settings) == "api":
+        return settings.api_llm_model or settings.llm_model
+    return settings.llm_model
+
+
+def active_llm_api_key(settings: SessionSettings) -> str:
+    if active_dialog_mode(settings) == "api":
+        return settings.api_llm_api_key
+    return settings.llm_api_key
+
+
+def active_temperature(settings: SessionSettings) -> float:
+    if active_dialog_mode(settings) == "api":
+        return float(settings.api_temperature)
+    return float(settings.temperature)
+
+
+def active_max_tokens(settings: SessionSettings) -> int:
+    if active_dialog_mode(settings) == "api":
+        return int(settings.api_max_tokens)
+    return int(settings.max_tokens)
+
+
+def active_history_turns(settings: SessionSettings) -> int:
+    if active_dialog_mode(settings) == "api":
+        return int(settings.api_history_turns)
+    return int(settings.history_turns)
 
 
 def llm_headers(settings: SessionSettings) -> dict[str, str]:
-    api_key = str(settings.llm_api_key or "").strip()
+    api_key = str(active_llm_api_key(settings) or "").strip()
     if not api_key:
         return {}
     return {"Authorization": f"Bearer {api_key}"}
@@ -307,6 +378,14 @@ def add_settings_args(parser) -> None:
         "--llm-api-key",
         default=os.environ.get("BRANCHWHISPER_LLM_API_KEY", os.environ.get("BUDING_LLM_API_KEY", "")),
     )
+    parser.add_argument("--dialog-mode", choices=["local", "api"], default="local")
+    parser.add_argument("--api-llm-url", default=os.environ.get("BRANCHWHISPER_API_LLM_URL", ""))
+    parser.add_argument("--api-llm-model", default=os.environ.get("BRANCHWHISPER_API_LLM_MODEL", ""))
+    parser.add_argument("--api-llm-api-key", default=os.environ.get("BRANCHWHISPER_API_LLM_API_KEY", ""))
+    parser.add_argument("--api-temperature", type=float, default=0.35)
+    parser.add_argument("--api-max-tokens", type=int, default=220)
+    parser.add_argument("--api-history-turns", type=int, default=8)
+    parser.add_argument("--thinking-enabled", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--temperature", type=float, default=0.35)
     parser.add_argument("--max-tokens", type=int, default=220)
     parser.add_argument("--history-turns", type=int, default=8)

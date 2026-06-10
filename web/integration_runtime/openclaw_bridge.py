@@ -363,12 +363,25 @@ def send_voice_reply(
                 "voice_send_ms": voice_send_ms,
                 "voice_send_status": "sent",
                 "voice_message_id": str(sent.get("message_id") or ""),
+                "voice_stage": str(sent.get("stage") or "sent"),
+                "voice_format": str(sent.get("transcode_format") or ""),
+                "voice_diagnostic": json.dumps(
+                    {
+                        "encode_type": sent.get("encode_type"),
+                        "sample_rate": sent.get("sample_rate"),
+                        "playtime_ms": sent.get("playtime_ms"),
+                        "upload_ms": sent.get("upload_ms"),
+                        "send_ms": sent.get("send_ms"),
+                    },
+                    ensure_ascii=False,
+                )[:240],
             },
         )
         log(
             f"sent voice account={account['account_id']} to={to_user_id} "
             f"message_id={sent.get('message_id') or ''} voice_send_ms={voice_send_ms} "
-            f"playtime_ms={sent.get('playtime_ms') or 0}"
+            f"playtime_ms={sent.get('playtime_ms') or 0} format={sent.get('transcode_format') or ''} "
+            f"encode_type={sent.get('encode_type') or ''}"
         )
         return True
     except (WeixinVoiceSendError, Exception) as exc:
@@ -382,6 +395,7 @@ def send_voice_reply(
                 "voice_send_ms": voice_send_ms,
                 "voice_send_status": "failed",
                 "voice_error": error[:240],
+                "voice_stage": error.split(":", 1)[0][:80] if ":" in error else "unknown",
             },
         )
         result["voice_error"] = error

@@ -48,11 +48,12 @@ class ConversationStore:
             return item
         return {**item, **self._summary(conversation)}
 
-    def create(self, title: str | None = None) -> dict:
+    def create(self, title: str | None = None, metadata: dict | None = None) -> dict:
         items = self._read_index()
         sequence = len(items) + 1
         conversation_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         now = self._now()
+        metadata = metadata if isinstance(metadata, dict) else {}
         conversation = {
             "id": conversation_id,
             "title": title or f"对话 {sequence:03d}",
@@ -65,6 +66,9 @@ class ConversationStore:
             "context_summary": "",
             "context_summary_layers": [],
             "compacted_until": 0,
+            "source": str(metadata.get("source") or ""),
+            "platform_id": str(metadata.get("platform_id") or ""),
+            "sender_id": str(metadata.get("sender_id") or ""),
             "messages": [],
         }
         self._write_conversation(conversation)
@@ -125,7 +129,7 @@ class ConversationStore:
         conversation = self.load(conversation_id)
         if not conversation:
             return None
-        for key in ("title", "summary"):
+        for key in ("title", "summary", "source", "platform_id", "sender_id"):
             if key in payload and payload[key] is not None:
                 conversation[key] = str(payload[key]).strip()[:240]
         if "context_summary" in payload and payload["context_summary"] is not None:
@@ -179,6 +183,9 @@ class ConversationStore:
         conversation.setdefault("context_summary", "")
         conversation.setdefault("context_summary_layers", [])
         conversation.setdefault("compacted_until", 0)
+        conversation.setdefault("source", "")
+        conversation.setdefault("platform_id", "")
+        conversation.setdefault("sender_id", "")
         conversation.setdefault("messages", [])
         for item in conversation["messages"]:
             if isinstance(item, dict):

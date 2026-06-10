@@ -23,6 +23,7 @@ SECONDS_PER_DAY = 86400
 MEMORY_LAYERS = {"short", "mid", "long"}
 TOOL_DEFAULTS_VERSION = 2
 MEMORY_ADMISSION_DEFAULT_MIN_IMPORTANCE = 0.55
+MEMORY_MODES = {"local", "api"}
 
 MEMORY_STABLE_HINTS = (
     "我叫", "我的名字", "叫我", "我是", "我的身份", "我住", "现居", "来自",
@@ -92,6 +93,19 @@ def compact_text(text: str, limit: int = 280) -> str:
 def normalize_key(text: str) -> str:
     text = re.sub(r"\s+", "", str(text or "").lower())
     return text[:160]
+
+
+def normalize_memory_mode(mode: str | None = None, settings: Any | None = None) -> str:
+    value = str(mode or getattr(settings, "dialog_mode", "local") or "local").strip().lower()
+    return value if value in MEMORY_MODES else "local"
+
+
+def scoped_key_norm(mode: str, key_norm: str) -> str:
+    normalized_mode = normalize_memory_mode(mode)
+    normalized_key = str(key_norm or "")
+    if normalized_key.startswith("local:") or normalized_key.startswith("api:"):
+        return normalized_key
+    return f"{normalized_mode}:{normalized_key}"
 
 
 class MemoryStore:
@@ -174,6 +188,27 @@ class MemoryStore:
                 conn.execute("ALTER TABLE memory_items ADD COLUMN embedding BLOB")
             except sqlite3.OperationalError:
                 pass
+            try:
+                conn.execute("ALTER TABLE memory_items ADD COLUMN mode TEXT NOT NULL DEFAULT 'local'")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE memory_events ADD COLUMN mode TEXT NOT NULL DEFAULT 'local'")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_mode_layer ON memory_items(mode, layer)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_mode_last_seen ON memory_items(mode, last_seen_at)")
+            for row in conn.execute("SELECT id, key_norm, mode FROM memory_items").fetchall():
+                key_norm = str(row["key_norm"] or "")
+                if key_norm.startswith("local:") or key_norm.startswith("api:"):
+                    continue
+                try:
+                    conn.execute(
+                        "UPDATE memory_items SET key_norm = ? WHERE id = ?",
+                        (scoped_key_norm(str(row["mode"] or "local"), key_norm), row["id"]),
+                    )
+                except sqlite3.IntegrityError:
+                    pass
     async def _get_embedding(self, text: str, llm_url: str = "http://127.0.0.1:8080/v1/embeddings") -> list[float] | None:
         """调用 llama.cpp /v1/embeddings 获取文本的向量表示。"""
         try:
@@ -188,10 +223,13 @@ class MemoryStore:
             return embedding
         except Exception:
             return None
-    def list_memories(self, settings: Any, limit: int = 200, query: str = "", layer: str = "") -> list[dict]:
-        self.apply_decay(settings)
+    def list_memories(self, settings: Any, limit: int = 200, query: str = "", layer: str = "", mode: str | None = None) -> list[dict]:
+        mode = normalize_memory_mode(mode, settings)
+        self.apply_decay(settings, mode=mode)
         clauses = []
         params: list[Any] = []
+        clauses.append("mode = ?")
+        params.append(mode)
         if layer in MEMORY_LAYERS:
             clauses.append("layer = ?")
             params.append(layer)
@@ -224,9 +262,10 @@ class MemoryStore:
         data.setdefault("time_text", "")
         data.setdefault("event_date", "")
         data.setdefault("time_of_day", "")
+        data.setdefault("mode", "local")
         return data
 
-    def create_memory(self, payload: dict, source: str = "manual") -> dict:
+    def create_memory(self, payload: dict, source: str = "manual", mode: str | None = None) -> dict:
         key = compact_text(payload.get("key") or payload.get("value") or "", 120)
         value = compact_text(payload.get("value") or key, 1000)
         if not key or not value:
@@ -240,10 +279,14 @@ class MemoryStore:
             "importance": float(payload.get("importance", 0.75)),
             "pinned": bool(payload.get("pinned", False)),
         }
-        return self.upsert_memory(item, source=source, excerpt=value)
+        return self.upsert_memory(item, source=source, excerpt=value, mode=mode or payload.get("mode"))
 
     def update_memory(self, memory_id: str, payload: dict) -> dict | None:
         allowed = {"key", "value", "layer", "confidence", "importance", "pinned"}
+        current = self.get_memory(memory_id)
+        if not current:
+            return None
+        mode = normalize_memory_mode(current.get("mode"))
         sets = []
         params: list[Any] = []
         for key, value in payload.items():
@@ -257,7 +300,7 @@ class MemoryStore:
                 value = clamp(float(value), 0.0, 1.0)
             if key == "key":
                 sets.append("key_norm = ?")
-                params.append(normalize_key(value))
+                params.append(scoped_key_norm(mode, normalize_key(value)))
             sets.append(f"{key} = ?")
             params.append(value)
         if not sets:
@@ -279,7 +322,7 @@ class MemoryStore:
             cur = conn.execute("DELETE FROM memory_items WHERE id = ?", (memory_id,))
         return cur.rowcount > 0
 
-    async def observe_turn(self, settings: Any, user_text: str, assistant_text: str = "", llm_extract_fn=None) -> list[dict]:
+    async def observe_turn(self, settings: Any, user_text: str, assistant_text: str = "", llm_extract_fn=None, mode: str | None = None) -> list[dict]:
         if not getattr(settings, "memory_enabled", True) or not getattr(settings, "memory_extract_enabled", True):
             return []
         # Memory extraction must never block or break the dialogue turn.
@@ -302,7 +345,7 @@ class MemoryStore:
                 if not admitted:
                     print(f"[memory] rejected candidate ({reason}): {candidate!r}", flush=True)
                     continue
-                mem = self.upsert_memory(admitted, source=admitted.get("source", "chat"), excerpt=user_text)
+                mem = self.upsert_memory(admitted, source=admitted.get("source", "chat"), excerpt=user_text, mode=mode)
             except Exception as exc:
                 print(f"[memory] skipped invalid candidate: {exc}; candidate={candidate!r}", flush=True)
                 continue
@@ -314,18 +357,19 @@ class MemoryStore:
             #                        (sqlite3.Binary(struct.pack(f'{len(embedding)}f', *embedding)), mem["id"]))
             saved.append(mem)
         try:
-            self.apply_decay(settings)
+            self.apply_decay(settings, mode=mode)
         except Exception as exc:
             print(f"[memory] decay failed: {exc}", flush=True)
         return saved
 
-    def upsert_memory(self, item: dict, source: str = "chat", excerpt: str = "") -> dict:
+    def upsert_memory(self, item: dict, source: str = "chat", excerpt: str = "", mode: str | None = None) -> dict:
         now = now_ts()
+        mode = normalize_memory_mode(mode or item.get("mode"))
         key = compact_text(item.get("key") or item.get("value") or "", 120)
         value = compact_text(item.get("value") or key, 1000)
         if not key or not value:
             raise ValueError("memory key/value is empty")
-        key_norm = normalize_key(key)
+        key_norm = scoped_key_norm(mode, normalize_key(key))
         layer = item.get("layer") if item.get("layer") in MEMORY_LAYERS else "short"
         confidence_gain = 0.3 if source == "manual" else safe_float(item.get("confidence_gain", 0.12), 0.12)
         importance = clamp(safe_float(item.get("importance", 0.45), 0.45), 0.0, 1.0)
@@ -336,7 +380,7 @@ class MemoryStore:
 
         # episodic_event: force key_norm to include time so different-days events stay separate
         if memory_type == "episodic_event" and time_text:
-            key_norm = normalize_key(key) + ":" + normalize_key(time_text)
+            key_norm = scoped_key_norm(mode, normalize_key(key) + ":" + normalize_key(time_text))
 
         with self.session() as conn:
             confidence = clamp(safe_float(item.get("confidence", 0.45), 0.45), 0.0, 1.0)
@@ -358,6 +402,7 @@ class MemoryStore:
                 "last_changed_at",
                 "pinned",
                 "source",
+                "mode",
                 "memory_type",
                 "time_text",
                 "event_date",
@@ -377,6 +422,7 @@ class MemoryStore:
                 now,
                 1 if item.get("pinned") else 0,
                 source,
+                mode,
                 memory_type,
                 time_text,
                 event_date,
@@ -404,14 +450,15 @@ class MemoryStore:
             memory_id = row["id"] if row else ""
 
             conn.execute(
-                "INSERT INTO memory_events (id, item_id, seen_at, source, excerpt) VALUES (?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), memory_id, now, source, compact_text(excerpt, 500)),
+                "INSERT INTO memory_events (id, item_id, seen_at, source, excerpt, mode) VALUES (?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), memory_id, now, source, compact_text(excerpt, 500), mode),
             )
             row = conn.execute("SELECT * FROM memory_items WHERE id = ?", (memory_id,)).fetchone()
 
         return self.row_to_dict(row)
-    def apply_decay(self, settings: Any) -> dict:
+    def apply_decay(self, settings: Any, mode: str | None = None) -> dict:
         now = now_ts()
+        mode = normalize_memory_mode(mode, settings)
         short_delete_days = float(getattr(settings, "memory_short_delete_days", 180))
         mid_downgrade_days = float(getattr(settings, "memory_mid_downgrade_days", 180))
         long_downgrade_days = float(getattr(settings, "memory_long_downgrade_days", 365))
@@ -422,7 +469,7 @@ class MemoryStore:
 
         promoted = downgraded = deleted = 0
         with self.session() as conn:
-            rows = conn.execute("SELECT * FROM memory_items").fetchall()
+            rows = conn.execute("SELECT * FROM memory_items WHERE mode = ?", (mode,)).fetchall()
             for row in rows:
                 memory_id = row["id"]
                 layer = row["layer"]
@@ -465,13 +512,14 @@ class MemoryStore:
         ).fetchone()
         return int(row["count"] if row else 0)
 
-    def relevant_memories(self, settings: Any, query: str, limit: int | None = None) -> list[dict]:
+    def relevant_memories(self, settings: Any, query: str, limit: int | None = None, mode: str | None = None) -> list[dict]:
         if not getattr(settings, "memory_enabled", True):
             return []
-        self.apply_decay(settings)
+        mode = normalize_memory_mode(mode, settings)
+        self.apply_decay(settings, mode=mode)
         limit = limit or int(getattr(settings, "memory_max_context_items", 12))
         with self.session() as conn:
-            rows = conn.execute("SELECT * FROM memory_items ORDER BY last_seen_at DESC LIMIT 300").fetchall()
+            rows = conn.execute("SELECT * FROM memory_items WHERE mode = ? ORDER BY last_seen_at DESC LIMIT 300", (mode,)).fetchall()
 
         query_norm = normalize_key(query)
         query_chars = set(query_norm)
@@ -494,8 +542,8 @@ class MemoryStore:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [data for _score, data in scored[: max(1, min(30, limit))]]
 
-    def format_context(self, settings: Any, query: str) -> str:
-        memories = self.relevant_memories(settings, query)
+    def format_context(self, settings: Any, query: str, mode: str | None = None) -> str:
+        memories = self.relevant_memories(settings, query, mode=mode)
         if not memories:
             return ""
         lines = [

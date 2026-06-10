@@ -12,17 +12,28 @@ let memorySearchTimer = 0;
 
 export async function initMemoryPage() {
   setupMemoryEvents();
+  syncMemoryModeFilter();
   await refreshMemoryPage({ quiet: true });
 }
 
 export async function enterMemoryPage() {
+  syncMemoryModeFilter();
   await refreshMemoryPage({ quiet: true });
+}
+
+function syncMemoryModeFilter() {
+  const select = $("#memoryModeFilter");
+  if (select) select.value = state.currentConfig.dialog_mode || "local";
 }
 
 function setupMemoryEvents() {
   if (eventsBound) return;
   eventsBound = true;
   $("#memoryRefreshPageBtn")?.addEventListener("click", () => refreshMemoryPage());
+  $("#memoryModeFilter")?.addEventListener("change", () => {
+    state.memoryPage = 1;
+    refreshMemoryPage({ quiet: true });
+  });
   $("#memoryLayerFilter")?.addEventListener("change", () => {
     state.memoryPage = 1;
     renderMemoryPage();
@@ -50,12 +61,16 @@ function setupMemoryEvents() {
 
 async function refreshMemoryPage(options = {}) {
   try {
-    await loadMemory(240);
+    await loadMemory(240, "", "", selectedMemoryMode());
     renderMemoryPage();
     setText("topStatus", `${state.memories.length} 条记忆`);
   } catch (error) {
     if (!options.quiet) showToast(`记忆读取失败：${error.message}`, "error");
   }
+}
+
+function selectedMemoryMode() {
+  return $("#memoryModeFilter")?.value || state.currentConfig.dialog_mode || "local";
 }
 
 function renderMemoryPage() {
@@ -168,7 +183,7 @@ async function handleAddMemory() {
   const text = input?.value.trim();
   if (!text) return;
   try {
-    await addMemory(text);
+    await addMemory(text, selectedMemoryMode());
     input.value = "";
     await refreshMemoryPage({ quiet: true });
     showToast("记忆已添加", "success");

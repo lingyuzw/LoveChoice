@@ -17,8 +17,17 @@ from typing import Any
 
 import httpx
 
-from service_runtime.audio_pipeline import clean_for_tts, extract_chat_message_text
-from core.config import SessionSettings, llm_headers
+from service_runtime.audio_pipeline import clean_for_tts, extract_chat_message_text, strip_reasoning_text
+from core.config import (
+    SessionSettings,
+    active_history_turns,
+    active_llm_model,
+    active_llm_url,
+    active_max_tokens,
+    active_temperature,
+    llm_headers,
+    memory_mode,
+)
 from data.conversations import ConversationStore
 from tools.direct_answers import direct_answer_from_tool
 from data.profiles import BotProfileStore
@@ -178,6 +187,25 @@ def wav_bytes_from_pcm16(pcm: bytes, sample_rate: int) -> bytes:
         wav.writeframes(pcm)
     buffer.extend(stream.getvalue())
     return bytes(buffer)
+
+
+def format_reply_paragraphs(text: str) -> str:
+    text = strip_reasoning_text(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text or "\n" in text or len(text) <= 18:
+        return text
+    text = re.sub(r"([。！？!?~～])", r"\1\n", text)
+    parts = [part.strip() for part in text.splitlines() if part.strip()]
+    if len(parts) <= 1:
+        parts = [part.strip() for part in re.split(r"[，,、]", text) if part.strip()]
+    final = []
+    for part in parts:
+        while len(part) > 24:
+            final.append(part[:24].strip())
+            part = part[24:].strip()
+        if part:
+            final.append(part)
+    return "\n".join(final[:6]) if final else text
 
 
 class IntegrationManager:
@@ -563,6 +591,9 @@ class IntegrationManager:
             "voice_send_status",
             "voice_error",
             "voice_message_id",
+            "voice_stage",
+            "voice_format",
+            "voice_diagnostic",
         }
         sanitized = {
             key: value
@@ -1023,10 +1054,31 @@ class IntegrationManager:
             return existing_id
         integration = self.get_integration(platform) or {}
         title = compact_text(str(integration.get("chat_name") or "我的微信聊天"), 48)
-        conversation = store.create(title)
+        conversation = store.create(
+            title,
+            metadata={"source": platform, "platform_id": platform, "sender_id": sender_id or ""},
+        )
         data["sessions"][key] = conversation["id"]
         self.save_config(data)
         return conversation["id"]
+
+    def forget_conversation(self, conversation_id: str) -> None:
+        if not conversation_id:
+            return
+        data = self.load_config()
+        changed = False
+        sessions = data.get("sessions") if isinstance(data.get("sessions"), dict) else {}
+        next_sessions = {key: value for key, value in sessions.items() if value != conversation_id}
+        if len(next_sessions) != len(sessions):
+            data["sessions"] = next_sessions
+            changed = True
+        my_session = data.get("my_weixin_session") if isinstance(data.get("my_weixin_session"), dict) else {}
+        if my_session.get("conversation_id") == conversation_id:
+            my_session["conversation_id"] = ""
+            data["my_weixin_session"] = my_session
+            changed = True
+        if changed:
+            self.save_config(data)
 
 
 class ExternalDialogEngine:
@@ -1060,7 +1112,13 @@ class ExternalDialogEngine:
         bot_profile = self.bot_profiles.get((integration or {}).get("bot_profile_id") or "default")
         runtime_settings = self.settings_for_profile(settings, bot_profile)
         conversation_id = self.integration_manager.session_conversation_id(platform_id, session_id, sender_id, self.conversation_store)
-        conversation = self.conversation_store.load(conversation_id) or self.conversation_store.create(f"{platform_id} / {sender_id}")
+        conversation = self.conversation_store.load(conversation_id)
+        if not conversation:
+            conversation = self.conversation_store.create(
+                f"{platform_id} / {sender_id}",
+                metadata={"source": platform_id, "platform_id": platform_id, "sender_id": sender_id},
+            )
+            conversation_id = conversation["id"]
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
         if platform_id and sender_id and metadata.get("account_id"):
             self.integration_manager.bind_my_weixin_session(
@@ -1132,7 +1190,7 @@ class ExternalDialogEngine:
         )
         self.integration_manager.append_log(
             platform_id,
-            f"[dialog:{trace_id}] reply text_len={len(reply_text)} tool={(tool_result or {}).get('tool') or '-'} direct={bool(direct_answer)} timings={timings} voice_requested={voice_requested} send_voice={send_voice} voice_file={voice_file}",
+            f"[dialog:{trace_id}] reply text_len={len(reply_text)} tool={(tool_result or {}).get('tool') or '-'} direct={bool(direct_answer)} timings={timings} voice_requested={voice_requested} send_voice={send_voice} voice_file={voice_file} voice_error={voice_error[:180]}",
         )
         return {
             "ok": True,
@@ -1164,7 +1222,8 @@ class ExternalDialogEngine:
     async def reply_text(self, settings: SessionSettings, conversation: dict, user_text: str) -> tuple[str, dict | None, str, int, int]:
         repeat_text = extract_repeat_text(user_text)
         if repeat_text:
-            return clean_for_tts(repeat_text) or repeat_text, None, "", 0, 0
+            reply = format_reply_paragraphs(clean_for_tts(repeat_text) or repeat_text)
+            return reply, None, "", 0, 0
 
         request_text = self.build_request_text(user_text, conversation)
         tool_started = time.perf_counter()
@@ -1172,7 +1231,8 @@ class ExternalDialogEngine:
         tool_ms = int((time.perf_counter() - tool_started) * 1000) if tool_result else 0
         direct_answer = direct_answer_from_tool(tool_result)
         if direct_answer:
-            return clean_for_tts(direct_answer) or direct_answer, tool_result, direct_answer, tool_ms, 0
+            reply = format_reply_paragraphs(clean_for_tts(direct_answer) or direct_answer)
+            return reply, tool_result, direct_answer, tool_ms, 0
         if tool_result:
             request_text += (
                 "\n\n联网/API 工具结果如下。请基于结果回答用户；如果结果不足或失败，要自然说明不确定，不要编造：\n"
@@ -1180,21 +1240,22 @@ class ExternalDialogEngine:
             )
         messages = self.build_messages(settings, conversation, user_text, request_text)
         llm_started = time.perf_counter()
-        answer = await self.complete_llm_text(settings, messages, temperature=settings.temperature, max_tokens=settings.max_tokens)
+        answer = await self.complete_llm_text(settings, messages, temperature=active_temperature(settings), max_tokens=active_max_tokens(settings))
         llm_ms = int((time.perf_counter() - llm_started) * 1000)
-        return clean_for_tts(answer) or answer.strip(), tool_result, "", tool_ms, llm_ms
+        reply = format_reply_paragraphs(clean_for_tts(answer) or answer.strip())
+        return reply, tool_result, "", tool_ms, llm_ms
 
     def build_messages(self, settings: SessionSettings, conversation: dict, user_text: str, request_text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": settings.system}]
         history = conversation.get("messages") or []
-        max_history = max(2, settings.history_turns * 2)
+        max_history = max(2, active_history_turns(settings) * 2)
         for item in history[-max_history:]:
             role = item.get("role")
             content = item.get("content")
             if role in {"user", "assistant"} and content:
                 messages.append({"role": role, "content": content})
 
-        memory_context = self.memory_store.format_context(settings, user_text)
+        memory_context = self.memory_store.format_context(settings, user_text, mode=memory_mode(settings))
         system_text = messages[0]["content"]
         if memory_context:
             system_text += "\n\n" + memory_context
@@ -1243,7 +1304,13 @@ class ExternalDialogEngine:
 
     async def remember_turn(self, settings: SessionSettings, user_text: str, assistant_text: str) -> None:
         try:
-            await self.memory_store.observe_turn(settings, user_text, assistant_text, lambda prompt: self.extract_memories(settings, prompt))
+            await self.memory_store.observe_turn(
+                settings,
+                user_text,
+                assistant_text,
+                lambda prompt: self.extract_memories(settings, prompt),
+                mode=memory_mode(settings),
+            )
         except Exception as exc:
             print(f"[integration-memory] update failed: {exc}", flush=True)
 
@@ -1264,16 +1331,20 @@ class ExternalDialogEngine:
     ) -> str:
         settings_snapshot = SessionSettings(**asdict(settings))
         payload = {
-            "model": settings_snapshot.llm_model,
+            "model": active_llm_model(settings_snapshot),
             "messages": messages,
             "stream": False,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if getattr(settings_snapshot, "thinking_enabled", False):
+            payload["enable_thinking"] = True
         async with httpx.AsyncClient(timeout=timeout or settings_snapshot.tools_timeout) as client:
-            resp = await client.post(settings_snapshot.llm_url, json=payload, headers=llm_headers(settings_snapshot))
+            resp = await client.post(active_llm_url(settings_snapshot), json=payload, headers=llm_headers(settings_snapshot))
+            if resp.status_code == 400 and payload.pop("enable_thinking", None):
+                resp = await client.post(active_llm_url(settings_snapshot), json=payload, headers=llm_headers(settings_snapshot))
         resp.raise_for_status()
-        return extract_chat_message_text(resp.json())
+        return strip_reasoning_text(extract_chat_message_text(resp.json()))
 
     def should_send_voice(self, user_text: str, keywords: list[str], integration: dict | None) -> bool:
         if (integration or {}).get("reply_mode") == "voice":

@@ -13,16 +13,29 @@ import httpx
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 
-from core.config import SessionSettings, llm_headers, public_settings
+from core.config import (
+    SessionSettings,
+    active_dialog_mode,
+    active_history_turns,
+    active_llm_model,
+    active_llm_url,
+    active_max_tokens,
+    active_temperature,
+    llm_headers,
+    memory_mode,
+    public_settings,
+)
 from data.conversations import ConversationStore
 from engagement.proactive import FollowupPolicy
 from media.assets import ChatImageStore, StickerStore
 from media.sticker_policy import StickerPolicy
 from service_runtime.audio_pipeline import (
+    ReasoningStreamFilter,
     clean_for_tts,
     extract_chat_message_text,
     extract_llm_delta,
     should_flush_tts,
+    strip_reasoning_text,
     transcribe_audio,
     wav_bytes_from_float32,
 )
@@ -69,6 +82,37 @@ def attachment_text(attachments: list[dict]) -> str:
         elif item.get("type") == "sticker":
             parts.append(f"[表情包:{item.get('tag') or item.get('name') or '默认'}]")
     return " ".join(parts)
+
+
+def format_reply_paragraphs(text: str) -> str:
+    text = strip_reasoning_text(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text or "\n" in text:
+        return text
+    if len(text) <= 18:
+        return text
+    protected = re.sub(r"([。！？!?~～])", r"\1\n", text)
+    parts = [part.strip() for part in protected.splitlines() if part.strip()]
+    if len(parts) <= 1:
+        words = re.split(r"([，,、])", text)
+        merged = []
+        current = ""
+        for part in words:
+            current += part
+            if len(current) >= 10 and part in {"，", ",", "、"}:
+                merged.append(current.strip())
+                current = ""
+        if current.strip():
+            merged.append(current.strip())
+        parts = merged if len(merged) > 1 else [text]
+    final = []
+    for part in parts:
+        while len(part) > 24:
+            final.append(part[:24].strip())
+            part = part[24:].strip()
+        if part:
+            final.append(part)
+    return "\n".join(final[:6])
 
 
 class DialogSession:
@@ -333,6 +377,7 @@ class DialogSession:
                 # "跟着我说..." should be spoken exactly. Bypassing the LLM
                 # avoids instruction drift and removes one latency source.
                 self.trace_log(trace_id, f"repeat:direct text_len={len(repeat_text)}")
+                repeat_text = format_reply_paragraphs(repeat_text)
                 await self.send_event("assistant_start")
                 await self.send_event("llm_delta", text=repeat_text)
                 await self.stream_direct_tts(repeat_text)
@@ -345,7 +390,7 @@ class DialogSession:
 
             followup = self.followup_policy.maybe_question(user_text) if self.followup_policy else None
             if followup:
-                question = followup["question"]
+                question = format_reply_paragraphs(followup["question"])
                 self.trace_log(trace_id, f"followup:{followup.get('id')}")
                 await self.send_event("assistant_start")
                 await self.send_event("llm_delta", text=question)
@@ -361,6 +406,7 @@ class DialogSession:
             if tool_result:
                 direct_answer = direct_answer_from_tool(tool_result)
                 if direct_answer:
+                    direct_answer = format_reply_paragraphs(direct_answer)
                     self.trace_log(trace_id, f"tool:direct {tool_result.get('tool')}")
                     await self.send_event("assistant_start")
                     await self.send_event("tool", id=tool_result.get("tool"), arguments=tool_result.get("arguments") or {})
@@ -404,6 +450,7 @@ class DialogSession:
 
             self.messages.append({"role": "user", "content": request_user_text})
             if full_answer:
+                full_answer = format_reply_paragraphs(full_answer)
                 self.messages.append({"role": "assistant", "content": full_answer})
                 assistant_attachments = self.choose_reply_sticker(user_text, full_answer, source)
                 if assistant_attachments:
@@ -471,7 +518,7 @@ class DialogSession:
                 "max_tokens": 180,
             }
             async with httpx.AsyncClient(timeout=float(getattr(self.settings, "vision_timeout", 45.0))) as client:
-                resp = await client.post(self.settings.vision_url, json=payload, headers=llm_headers(self.settings))
+                resp = await client.post(self.settings.vision_url, json=payload)
             resp.raise_for_status()
             summary = extract_chat_message_text(resp.json()).strip()
             return compact_text(summary, 260) or "图片已收到，但没有识别出明确内容。"
@@ -582,7 +629,13 @@ class DialogSession:
 
     async def remember_turn_safely(self, user_text: str, assistant_text: str) -> None:
         try:
-            await self.memory_store.observe_turn(self.settings, user_text, assistant_text, self.extract_memories_with_llm)
+            await self.memory_store.observe_turn(
+                self.settings,
+                user_text,
+                assistant_text,
+                self.extract_memories_with_llm,
+                mode=memory_mode(self.settings),
+            )
         except Exception as exc:
             print(f"[memory] turn update failed: {exc}", flush=True)
 
@@ -624,7 +677,7 @@ class DialogSession:
 
     def build_contextual_request_messages(self, user_text: str, request_user_text: str) -> list[dict[str, str]]:
         messages = list(self.messages)
-        memory_context = self.memory_store.format_context(self.settings, user_text)
+        memory_context = self.memory_store.format_context(self.settings, user_text, mode=memory_mode(self.settings))
 
         # 注入当前时间
         from datetime import datetime
@@ -740,44 +793,60 @@ class DialogSession:
         timeout: float | None = None,
     ) -> str:
         payload = {
-            "model": self.settings.llm_model,
+            "model": active_llm_model(self.settings),
             "messages": messages,
             "stream": False,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if getattr(self.settings, "thinking_enabled", False):
+            payload["enable_thinking"] = True
         async with httpx.AsyncClient(timeout=timeout or self.settings.tools_timeout) as client:
-            resp = await client.post(self.settings.llm_url, json=payload, headers=llm_headers(self.settings))
+            resp = await client.post(active_llm_url(self.settings), json=payload, headers=llm_headers(self.settings))
+            if resp.status_code == 400 and payload.pop("enable_thinking", None):
+                resp = await client.post(active_llm_url(self.settings), json=payload, headers=llm_headers(self.settings))
         resp.raise_for_status()
-        return extract_chat_message_text(resp.json())
+        return strip_reasoning_text(extract_chat_message_text(resp.json()))
 
-    async def stream_llm(self, request_messages: list[dict[str, str]], text_queue: asyncio.Queue) -> str:
+    async def stream_llm(self, request_messages: list[dict[str, str]], text_queue: asyncio.Queue, allow_thinking: bool = True) -> str:
         # llama.cpp exposes an OpenAI-compatible SSE stream. We forward each
         # text delta to the page immediately, while buffering sentence-sized
         # pieces for TTS.
         payload = {
-            "model": self.settings.llm_model,
+            "model": active_llm_model(self.settings),
             "messages": request_messages,
             "stream": True,
-            "temperature": self.settings.temperature,
-            "max_tokens": self.settings.max_tokens,
-            "top_p": 0.95,
-            "repeat_penalty": 1.18,
-            # llama.cpp DRY sampling：检测重复短语并惩罚，比单纯的 repeat_penalty 更精准
-            "dry_multiplier": 0.8,
-            "dry_base": 1.75,
-            "dry_allowed_length": 2,
-            "dry_penalty_last_n": -1,
-            "seed": int(time.time() * 1000) % 2147483647,
+            "temperature": active_temperature(self.settings),
+            "max_tokens": active_max_tokens(self.settings),
         }
+        if active_dialog_mode(self.settings) == "local":
+            payload.update(
+                {
+                    "top_p": 0.95,
+                    "repeat_penalty": 1.18,
+                    # llama.cpp DRY sampling：检测重复短语并惩罚，比单纯的 repeat_penalty 更精准
+                    "dry_multiplier": 0.8,
+                    "dry_base": 1.75,
+                    "dry_allowed_length": 2,
+                    "dry_penalty_last_n": -1,
+                    "seed": int(time.time() * 1000) % 2147483647,
+                }
+            )
+        if allow_thinking and getattr(self.settings, "thinking_enabled", False):
+            payload["enable_thinking"] = True
         buffer = ""
         full_answer = ""
+        reasoning_filter = ReasoningStreamFilter()
         first_chunk = True
         first_token = True
         started = time.perf_counter()
 
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", self.settings.llm_url, json=payload, headers=llm_headers(self.settings)) as resp:
+            stream_response = client.stream("POST", active_llm_url(self.settings), json=payload, headers=llm_headers(self.settings))
+            async with stream_response as resp:
+                if resp.status_code == 400 and payload.pop("enable_thinking", None):
+                    await resp.aclose()
+                    return await self.stream_llm(request_messages, text_queue, allow_thinking=False)
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line:
@@ -792,7 +861,7 @@ class DialogSession:
                     except json.JSONDecodeError:
                         continue
 
-                    text = extract_llm_delta(data)
+                    text = reasoning_filter.feed(extract_llm_delta(data))
                     if not text:
                         continue
 
@@ -816,11 +885,18 @@ class DialogSession:
                         buffer = ""
                         first_chunk = False
 
+        tail_text = reasoning_filter.flush()
+        if tail_text:
+            full_answer += tail_text
+            buffer += tail_text
+            await self.send_event("llm_delta", text=tail_text)
+
         if buffer.strip():
             tts_text = clean_for_tts(buffer)
             if tts_text:
                 await text_queue.put(tts_text)
 
+        full_answer = strip_reasoning_text(full_answer)
         return clean_for_tts(full_answer) or full_answer.strip()
 
     async def tts_queue_worker(self, text_queue: asyncio.Queue) -> None:
@@ -1000,7 +1076,7 @@ class DialogSession:
             await self.websocket.send_bytes(chunk)
 
     def trim_history(self) -> None:
-        max_history_messages = max(2, self.settings.history_turns * 2)
+        max_history_messages = max(2, active_history_turns(self.settings) * 2)
         if len(self.messages) > 1 + max_history_messages:
             del self.messages[1 : len(self.messages) - max_history_messages]
 

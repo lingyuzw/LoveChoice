@@ -101,9 +101,13 @@ def parse_asr_text(raw: str) -> str:
 def extract_llm_delta(data: dict) -> str:
     choice = (data.get("choices") or [{}])[0]
     delta = choice.get("delta") or {}
+    if delta.get("reasoning_content") is not None and delta.get("content") is None:
+        return ""
     text = delta.get("content")
     if text is None:
         message = choice.get("message") or {}
+        if message.get("reasoning_content") is not None and message.get("content") is None:
+            return ""
         text = message.get("content")
     return text or ""
 
@@ -121,6 +125,105 @@ def extract_chat_message_text(data: dict) -> str:
     if isinstance(data.get("content"), str):
         return data["content"]
     return json.dumps(data, ensure_ascii=False)
+
+
+def strip_reasoning_text(text: str) -> str:
+    text = str(text or "")
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.I | re.S)
+    text = re.sub(r"<think>.*$", "", text, flags=re.I | re.S)
+    text = re.sub(r"<\|begin_of_thought\|>.*?<\|end_of_thought\|>", "", text, flags=re.I | re.S)
+    text = re.sub(r"<\|begin_of_thought\|>.*$", "", text, flags=re.I | re.S)
+    return text.strip()
+
+
+class ReasoningStreamFilter:
+    """Remove streamed reasoning tags before text reaches UI, TTS, or memory."""
+
+    START_MARKERS = ("<think>", "<|begin_of_thought|>")
+    END_MARKERS = ("</think>", "<|end_of_thought|>")
+
+    def __init__(self) -> None:
+        self.in_reasoning = False
+        self.pending = ""
+
+    def feed(self, text: str) -> str:
+        data = self.pending + str(text or "")
+        self.pending = ""
+        if not data:
+            return ""
+
+        output: list[str] = []
+        index = 0
+        while index < len(data):
+            if self.in_reasoning:
+                found = self._find_marker(data, self.END_MARKERS, index)
+                if found:
+                    _marker, start, end = found
+                    index = end
+                    self.in_reasoning = False
+                    continue
+                self.pending = self._suffix_prefix(data[index:], self.END_MARKERS)
+                return "".join(output)
+
+            found = self._find_marker(data, self.START_MARKERS, index)
+            if found:
+                _marker, start, end = found
+                output.append(self._safe_visible_tail(data[index:start], self.START_MARKERS))
+                index = end
+                self.in_reasoning = True
+                continue
+
+            visible = data[index:]
+            keep = self._suffix_prefix(visible, self.START_MARKERS)
+            if keep:
+                output.append(visible[: -len(keep)])
+                self.pending = keep
+            else:
+                output.append(visible)
+            break
+
+        return "".join(output)
+
+    def flush(self) -> str:
+        if self.in_reasoning:
+            self.pending = ""
+            return ""
+        text = self.pending
+        self.pending = ""
+        return text
+
+    @classmethod
+    def _find_marker(cls, text: str, markers: tuple[str, ...], start: int) -> tuple[str, int, int] | None:
+        lowered = text.lower()
+        best: tuple[str, int, int] | None = None
+        for marker in markers:
+            pos = lowered.find(marker.lower(), start)
+            if pos < 0:
+                continue
+            candidate = (marker, pos, pos + len(marker))
+            if best is None or candidate[1] < best[1]:
+                best = candidate
+        return best
+
+    @classmethod
+    def _suffix_prefix(cls, text: str, markers: tuple[str, ...]) -> str:
+        lowered = text.lower()
+        best = ""
+        for marker in markers:
+            marker_lower = marker.lower()
+            max_len = min(len(marker_lower) - 1, len(lowered))
+            for size in range(max_len, 0, -1):
+                if lowered.endswith(marker_lower[:size]) and size > len(best):
+                    best = text[-size:]
+                    break
+        return best
+
+    def _safe_visible_tail(self, text: str, markers: tuple[str, ...]) -> str:
+        keep = self._suffix_prefix(text, markers)
+        if keep:
+            self.pending = keep
+            return text[: -len(keep)]
+        return text
 
 
 def should_flush_tts(text: str, first_chunk: bool) -> bool:
@@ -145,7 +248,7 @@ def should_flush_tts(text: str, first_chunk: bool) -> bool:
 
 
 def clean_for_tts(text: str) -> str:
-    text = str(text or "").strip()
+    text = strip_reasoning_text(text)
     if not text:
         return ""
 

@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 
 import httpx
+import numpy as np
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,6 +57,8 @@ from media.avatars import AvatarStore
 from core.config import (
     SessionSettings,
     add_settings_args,
+    active_llm_model,
+    active_llm_url,
     enable_default_capabilities,
     llm_headers,
     load_persisted_settings,
@@ -69,9 +72,10 @@ from engagement.proactive import FollowupPolicy, ProactiveStore
 from engagement.reminders import ReminderStore
 from tools.runtime_brain import MemoryStore, ToolManager
 from service_runtime.services import ServiceManager
+from service_runtime.audio_pipeline import transcribe_audio, wav_bytes_from_float32
 from media.sticker_policy import StickerPolicy
 from core.tool_config import ToolProviderConfig
-from service_runtime.vad import VadModelStore
+from service_runtime.vad import MIC_SAMPLE_RATE, VadModelStore
 
 
 # Backend data flow:
@@ -111,7 +115,7 @@ def service_warmup_key(service_id: str, settings: SessionSettings) -> str:
     if service_id == "asr":
         return f"asr:{settings.asr_url}:{settings.asr_model}"
     if service_id == "llm":
-        return f"llm:{settings.llm_url}:{settings.llm_model}"
+        return f"llm:{active_llm_url(settings)}:{active_llm_model(settings)}"
     return service_id
 
 
@@ -235,7 +239,7 @@ async def warmup_asr(settings: SessionSettings) -> None:
 
 async def warmup_llm(settings: SessionSettings) -> None:
     payload = {
-        "model": settings.llm_model,
+        "model": active_llm_model(settings),
         "messages": [
             {"role": "system", "content": "Reply with exactly one short token."},
             {"role": "user", "content": "warmup"},
@@ -245,7 +249,7 @@ async def warmup_llm(settings: SessionSettings) -> None:
         "max_tokens": 1,
     }
     async with httpx.AsyncClient(timeout=35.0) as client:
-        resp = await client.post(settings.llm_url, json=payload, headers=llm_headers(settings))
+        resp = await client.post(active_llm_url(settings), json=payload, headers=llm_headers(settings))
     resp.raise_for_status()
 
 
@@ -480,15 +484,17 @@ def create_app(args) -> FastAPI:
         return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/api/memory")
-    async def memory_items(limit: int = 200, query: str = "", layer: str = ""):
+    async def memory_items(limit: int = 200, query: str = "", layer: str = "", mode: str = ""):
         return {
-            "items": app.state.memory_store.list_memories(app.state.settings, limit=limit, query=query, layer=layer),
+            "items": app.state.memory_store.list_memories(app.state.settings, limit=limit, query=query, layer=layer, mode=mode),
             "db_path": str(MEMORY_DB),
+            "mode": mode or getattr(app.state.settings, "dialog_mode", "local"),
         }
 
     @app.post("/api/memory")
     async def create_memory_item(payload: dict | None = Body(default=None)):
-        item = app.state.memory_store.create_memory(payload or {})
+        payload = payload or {}
+        item = app.state.memory_store.create_memory(payload, mode=payload.get("mode") or getattr(app.state.settings, "dialog_mode", "local"))
         return {"item": item}
 
     @app.patch("/api/memory/{memory_id}")
@@ -501,8 +507,9 @@ def create_app(args) -> FastAPI:
         return {"ok": app.state.memory_store.delete_memory(memory_id)}
 
     @app.post("/api/memory/decay")
-    async def decay_memory():
-        return app.state.memory_store.apply_decay(app.state.settings)
+    async def decay_memory(payload: dict | None = Body(default=None)):
+        payload = payload or {}
+        return app.state.memory_store.apply_decay(app.state.settings, mode=payload.get("mode"))
 
     @app.get("/api/tools")
     async def tools_config():
@@ -752,6 +759,8 @@ def create_app(args) -> FastAPI:
     @app.delete("/api/conversations/{conversation_id}")
     async def delete_conversation(conversation_id: str):
         deleted = app.state.conversation_store.delete(conversation_id)
+        if deleted:
+            app.state.integration_manager.forget_conversation(conversation_id)
         return {"ok": deleted, "conversations": app.state.conversation_store.list()}
 
     @app.websocket("/ws/dialog")
