@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import httpx
 
-from tool_config import DEFAULT_TOOL_PROVIDER_CONFIG, deep_merge
+from core.tool_config import DEFAULT_TOOL_PROVIDER_CONFIG, deep_merge
 
 
 SECONDS_PER_DAY = 86400

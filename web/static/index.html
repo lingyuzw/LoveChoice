@@ -253,32 +253,39 @@
       <main class="page-view" id="page-settings" style="display:none">
         <div class="settings-page">
           <aside class="settings-nav">
-            <p class="eyebrow">Configuration</p>
+            <p class="eyebrow">BranchWhisper</p>
             <h1>配置中心</h1>
             <a data-setting-nav="appearance"><i data-lucide="palette"></i>外观</a>
-            <a data-setting-nav="engine"><i data-lucide="cpu"></i>模型引擎</a>
+            <a data-setting-nav="engine"><i data-lucide="cpu"></i>本地模型</a>
             <a data-setting-nav="tools"><i data-lucide="globe-2"></i>联网工具</a>
-            <a data-setting-nav="dialogFeatures"><i data-lucide="images"></i>对话能力</a>
+            <a data-setting-nav="dialogFeatures"><i data-lucide="library"></i>素材与对话</a>
             <a data-setting-nav="proactive"><i data-lucide="sparkles"></i>主动性</a>
-            <a data-setting-nav="botProfiles"><i data-lucide="bot"></i>Bot Profile</a>
+            <a data-setting-nav="botProfiles"><i data-lucide="bot"></i>人格</a>
             <a data-setting-nav="prompt"><i data-lucide="message-square-text"></i>Prompt</a>
             <a data-setting-nav="tts"><i data-lucide="volume-2"></i>语音合成</a>
             <a data-setting-nav="vad"><i data-lucide="mic-vocal"></i>语音检测</a>
-            <a data-setting-nav="commands"><i data-lucide="sliders-horizontal"></i>服务命令</a>
-            <button class="primary-action full" id="saveAllBtn" type="button"><i data-lucide="save"></i>应用配置</button>
+            <a data-setting-nav="commands"><i data-lucide="terminal"></i>服务命令</a>
+            <button class="primary-action full settings-save-main" id="saveAllBtn" type="button"><i data-lucide="save"></i>应用全部配置</button>
           </aside>
           <section class="settings-content">
+            <section class="settings-hero">
+              <div>
+                <p class="eyebrow">Control Room</p>
+                <h2>本地模型与对话能力</h2>
+              </div>
+              <button class="primary-action" id="saveAllHeroBtn" type="button"><i data-lucide="save"></i>保存当前配置</button>
+            </section>
             <section class="settings-overview-grid" id="settingsOverviewGrid">
-              <article class="settings-overview-card" data-open-config="proactive"><span><i data-lucide="sparkles"></i>主动性</span><strong id="proactiveSummary">默认关闭</strong><small>早安、提醒、主动追问</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="dialogFeatures"><span><i data-lucide="images"></i>对话能力</span><strong id="dialogFeaturesSummary">图片 · 表情包</strong><small>图片理解、表情包、上下文压缩</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="botProfiles"><span><i data-lucide="bot"></i>Bot 人格</span><strong id="botProfileSummary">默认人格</strong><small>工具开关、风格、System Prompt</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="prompt"><span><i data-lucide="message-square-text"></i>Prompt</span><strong id="promptSummary">系统提示词</strong><small>主对话人格设定</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="tts"><span><i data-lucide="volume-2"></i>语音合成</span><strong id="ttsSummary">TTS</strong><small>速度、音量、采样率</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="vad"><span><i data-lucide="mic-vocal"></i>语音检测</span><strong id="vadSummary">VAD</strong><small>阈值、静音、切分</small><button class="secondary-action" type="button">配置</button></article>
-              <article class="settings-overview-card" data-open-config="commands"><span><i data-lucide="sliders-horizontal"></i>服务命令</span><strong id="commandsSummary">启动参数</strong><small>ASR / LLM / TTS 命令</small><button class="secondary-action" type="button">配置</button></article>
+              <article class="settings-overview-card primary-card" data-open-config="dialogFeatures"><span><i data-lucide="library"></i>素材与对话</span><strong id="dialogFeaturesSummary">图片 · 表情包</strong><small>图片理解、素材库、上下文压缩</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card primary-card" data-open-config="proactive"><span><i data-lucide="sparkles"></i>主动性</span><strong id="proactiveSummary">默认关闭</strong><small>早安、提醒、主动追问</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card" data-open-config="botProfiles"><span><i data-lucide="bot"></i>人格</span><strong id="botProfileSummary">默认人格</strong><small>Profile、工具开关、角色风格</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card" data-open-config="prompt"><span><i data-lucide="message-square-text"></i>Prompt</span><strong id="promptSummary">系统提示词</strong><small>主对话人格设定</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card" data-open-config="tts"><span><i data-lucide="volume-2"></i>语音合成</span><strong id="ttsSummary">TTS</strong><small>速度、音量、采样率</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card" data-open-config="vad"><span><i data-lucide="mic-vocal"></i>语音检测</span><strong id="vadSummary">VAD</strong><small>阈值、静音、切分</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
+              <article class="settings-overview-card" data-open-config="commands"><span><i data-lucide="terminal"></i>服务命令</span><strong id="commandsSummary">启动参数</strong><small>ASR / LLM / TTS 命令</small><button class="secondary-action" type="button"><i data-lucide="settings-2"></i>打开</button></article>
             </section>
             <article class="theme-section" id="appearance">
-              <div class="panel-head"><div><p class="eyebrow">Appearance</p><h2>外观</h2></div></div>
+              <div class="panel-head"><div><p class="eyebrow">Appearance</p><h2>外观与身份</h2></div><span class="soft-badge" id="appearanceSummary">Web 对话页生效</span></div>
               <div class="appearance-layout">
                 <section class="appearance-card appearance-card--compact">
                   <div class="appearance-card-head">
@@ -324,7 +331,7 @@
               </div>
             </article>
             <article class="settings-panel" id="engine">
-              <div class="panel-head"><div><p class="eyebrow">Local Model Engine</p><h2>本地模型引擎</h2></div><span class="soft-badge">Local only</span></div>
+              <div class="panel-head"><div><p class="eyebrow">Local Model Engine</p><h2>本地模型引擎</h2></div><span class="soft-badge" id="engineSummary">Local only</span></div>
               <div class="form-grid">
                 <label><span>ASR Mode</span><select id="asrMode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
                 <label><span>ASR Model</span><input id="asrModel" type="text" /></label>
@@ -337,7 +344,7 @@
               </div>
             </article>
             <article class="settings-panel" id="tools">
-              <div class="panel-head"><div><p class="eyebrow">Network Tools</p><h2>联网工具</h2></div></div>
+              <div class="panel-head"><div><p class="eyebrow">Network Tools</p><h2>联网工具</h2></div><span class="soft-badge" id="toolsSummary">工具状态</span></div>
               <div class="form-grid compact">
                 <label><span>工具总开关</span><select id="toolsEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
                 <label><span>自动调用</span><select id="toolsAutoCall"><option value="true">启用</option><option value="false">关闭</option></select></label>
@@ -366,8 +373,8 @@
                     <label><span>图片入记忆</span><select id="visionMemoryExtractEnabled"><option value="false">默认不记</option><option value="true">允许准入</option></select></label>
                   </div>
                 </section>
-                <section class="dialog-feature-card">
-                  <div class="appearance-card-head"><strong>表情包</strong><small>按聊天气氛自动发送，可调得更活跃</small></div>
+                <section class="dialog-feature-card sticker-asset-card">
+                  <div class="appearance-card-head"><strong>表情包素材库</strong><small>按聊天气氛自动发送，可调得更活跃</small></div>
                   <div class="form-grid compact">
                     <label><span>启用</span><select id="stickersEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
                     <label><span>活跃度</span><select id="stickerActivity"><option value="off">关闭</option><option value="low">低</option><option value="standard">标准</option><option value="active">活跃</option><option value="very_active">超活跃</option><option value="custom">自定义</option></select></label>
@@ -377,6 +384,12 @@
                     <label><span>自定义概率</span><input id="stickerCustomProbability" type="number" min="0" max="1" step="0.05" /></label>
                   </div>
                   <div class="sticker-library-panel">
+                    <div class="asset-library-head">
+                      <div>
+                        <strong>素材库</strong>
+                        <small id="stickerLibrarySummary">按标签管理，后续可扩展角色素材包</small>
+                      </div>
+                    </div>
                     <div class="sticker-upload-row">
                       <input class="visually-hidden" id="stickerFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                       <input id="stickerTagInput" type="text" placeholder="标签：开心 / 安慰 / 无语" />

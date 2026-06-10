@@ -39,11 +39,11 @@ let editingToolProvider = "";
 let activeSettingsSection = "";
 const SETTINGS_SECTION_LABELS = {
   appearance: "外观",
-  engine: "本地模型引擎",
+  engine: "本地模型",
   tools: "联网工具",
-  dialogFeatures: "对话能力",
+  dialogFeatures: "素材与对话",
   proactive: "主动性",
-  botProfiles: "Bot 人格",
+  botProfiles: "人格",
   prompt: "Prompt 配置",
   tts: "语音合成",
   vad: "语音检测",
@@ -114,6 +114,7 @@ function setupSettingsEvents() {
   }
   eventsBound = true;
   $("#saveAllBtn")?.addEventListener("click", () => saveSettingsPage({ closeModal: false }));
+  $("#saveAllHeroBtn")?.addEventListener("click", () => saveSettingsPage({ closeModal: false }));
   $("#settingsSectionSaveBtn")?.addEventListener("click", () => saveSettingsPage({ closeModal: true }));
   $("#settingsSectionCancelBtn")?.addEventListener("click", closeSettingsSectionModal);
   document.querySelector("#settingsSectionModal .modal-close")?.addEventListener("click", closeSettingsSectionModal);
@@ -249,6 +250,8 @@ function refreshSettingsOverview() {
   setText("ttsSummary", `${value("ttsSpeed", 1)}x · ${value("ttsSampleRate", 24000)}Hz`);
   setText("vadSummary", `阈值 ${value("vadThreshold", 0.5)} · 静音 ${value("vadMinSilence", 500)}ms`);
   setText("commandsSummary", `${(state.services || []).length} 个服务`);
+  const stickerCount = (state.stickers || []).length;
+  setText("stickerLibrarySummary", `${stickerCount} 个素材 · 按标签管理，后续可扩展角色素材包`);
 }
 
 /* ---- config form ---- */
@@ -581,9 +584,9 @@ async function applyToolProviderModal() {
   });
   applyProviderDefaults(editingToolProvider, next);
   toolProviderDraft[editingToolProvider] = next;
-  closeToolProviderModal();
-  renderToolProviders();
   if (state.previewMode) {
+    closeToolProviderModal();
+    renderToolProviders();
     resetToolProviderApplyButton();
     return;
   }
@@ -591,6 +594,7 @@ async function applyToolProviderModal() {
     await saveToolConfig(collectToolConfig());
     syncToolProviderDraft();
     renderToolProviders();
+    closeToolProviderModal();
     showToast("工具配置已保存", "success");
   } catch (e) {
     showToast(`工具配置保存失败：${e.message}`, "error");

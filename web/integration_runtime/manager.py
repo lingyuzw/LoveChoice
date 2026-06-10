@@ -17,12 +17,12 @@ from typing import Any
 
 import httpx
 
-from audio_pipeline import clean_for_tts, extract_chat_message_text
-from config import SessionSettings, llm_headers
-from conversations import ConversationStore
-from direct_answers import direct_answer_from_tool
-from profiles import BotProfileStore
-from runtime_brain import MemoryStore, ToolManager
+from service_runtime.audio_pipeline import clean_for_tts, extract_chat_message_text
+from core.config import SessionSettings, llm_headers
+from data.conversations import ConversationStore
+from tools.direct_answers import direct_answer_from_tool
+from data.profiles import BotProfileStore
+from tools.runtime_brain import MemoryStore, ToolManager
 
 
 DEFAULT_VOICE_TRIGGERS = ["发语音", "说话", "念给我听", "语音回复", "我想听你说话"]

@@ -51,6 +51,69 @@
 .log-viewer { color: var(--text-soft); background: var(--bg); }
 
 /* theme section */
+.settings-page {
+  align-items: start;
+}
+
+.settings-nav {
+  gap: 7px;
+  padding: 16px 12px;
+}
+
+.settings-nav h1 {
+  margin-bottom: 8px;
+}
+
+.settings-nav a {
+  min-height: 38px;
+  border-radius: 10px;
+  font-weight: 760;
+}
+
+.settings-save-main {
+  margin-top: 10px;
+  min-height: 40px;
+}
+
+.settings-content {
+  gap: 14px;
+}
+
+.settings-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface) 88%, var(--primary) 12%), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 82%, transparent), var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-hero h2 {
+  max-width: 720px;
+  margin: 2px 0 6px;
+  color: var(--text);
+  font-size: calc(28px * var(--ui-font-scale));
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.settings-hero p:not(.eyebrow) {
+  max-width: 760px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.65;
+}
+
+.settings-hero .primary-action {
+  min-width: 150px;
+  min-height: 42px;
+}
+
 .theme-section {
   display: grid; gap: 12px;
   padding: 14px; border: 1px solid var(--border);
@@ -60,17 +123,17 @@
 
 .settings-overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+  margin-bottom: 0;
 }
 
 .settings-overview-card {
-  min-height: 138px;
+  min-height: 126px;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 7px;
-  padding: 14px;
+  gap: 8px;
+  padding: 13px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background:
@@ -80,6 +143,14 @@
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
 }
+
+.settings-overview-card.primary-card {
+  grid-column: span 2;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface) 82%, var(--primary) 18%), transparent 68%),
+    var(--surface-muted);
+}
+
 .settings-overview-card:hover {
   transform: translateY(-2px);
   border-color: var(--border-strong);
@@ -101,7 +172,7 @@
 }
 .settings-overview-card strong {
   color: var(--text);
-  font-size: calc(19px * var(--ui-font-scale));
+  font-size: calc(18px * var(--ui-font-scale));
   line-height: 1.25;
 }
 .settings-overview-card small {
@@ -111,11 +182,20 @@
 .settings-overview-card .secondary-action {
   justify-self: start;
   min-height: 32px;
+  gap: 6px;
 }
 
-@media (max-width: 980px) {
+.settings-overview-card .secondary-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 1180px) {
   .settings-overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-overview-card.primary-card {
+    grid-column: span 1;
   }
 }
 
@@ -130,8 +210,8 @@
 }
 
 .settings-section-modal-panel {
-  width: min(980px, calc(100vw - 38px));
-  max-height: min(820px, calc(100vh - 38px));
+  width: min(1040px, calc(100vw - 38px));
+  max-height: min(840px, calc(100vh - 38px));
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .settings-section-modal-panel .modal-body {
@@ -148,6 +228,7 @@
 .settings-section-modal-actions {
   padding-top: 12px;
   border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
 }
 .appearance-layout {
   display: grid;
@@ -414,6 +495,13 @@
     linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 78%, transparent), color-mix(in srgb, var(--surface) 92%, transparent));
   box-shadow: var(--shadow-sm);
 }
+
+.dialog-feature-card.sticker-asset-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 82%, var(--primary) 6%), transparent 120px),
+    var(--surface);
+}
+
 .dialog-feature-card.wide {
   grid-column: 1 / -1;
 }
@@ -423,37 +511,67 @@
 .sticker-library-panel {
   display: grid;
   gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.asset-library-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.asset-library-head strong {
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+
+.asset-library-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
 }
 .sticker-upload-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   gap: 8px;
   align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
 }
 .sticker-library-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
-  gap: 8px;
-  max-height: 230px;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+  max-height: 310px;
   overflow-y: auto;
   padding-right: 2px;
 }
 .sticker-library-item {
   min-width: 0;
   display: grid;
-  grid-template-columns: 1fr 28px;
-  grid-template-rows: 74px auto;
-  gap: 5px;
+  grid-template-columns: 1fr 30px;
+  grid-template-rows: 86px auto;
+  gap: 7px;
   align-items: center;
-  padding: 6px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+.sticker-library-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
 }
 .sticker-library-item img {
   grid-column: 1 / -1;
   width: 100%;
-  height: 74px;
+  height: 86px;
   object-fit: contain;
 }
 .sticker-library-item span {
@@ -481,7 +599,7 @@
   height: 14px;
 }
 .sticker-library-empty {
-  min-height: 74px;
+  min-height: 96px;
   display: grid;
   place-items: center;
   border: 1px dashed var(--border);
