@@ -77,6 +77,13 @@ export async function saveToolConfig(tools) {
   return state.toolConfig;
 }
 
+export async function listModelFiles(root = "", query = "") {
+  const params = new URLSearchParams();
+  if (root) params.set("root", root);
+  if (query) params.set("query", query);
+  return fetchJson(`/api/files/models?${params.toString()}`);
+}
+
 export async function loadBotProfiles() {
   const data = await fetchJson("/api/bot-profiles");
   state.botProfiles = data.profiles || [];

@@ -18,6 +18,7 @@ import {
   loadServices,
   loadStickers,
   loadToolConfig,
+  listModelFiles,
   resolveTool,
   saveConfig,
   saveProactiveConfig,
@@ -37,6 +38,7 @@ let eventsBound = false;
 let toolProviderDraft = {};
 let editingToolProvider = "";
 let activeSettingsSection = "";
+let modelFileRoot = "";
 const SETTINGS_SECTION_LABELS = {
   appearance: "外观",
   engine: "本地模型",
@@ -98,6 +100,7 @@ export async function initSettings() {
   if (!configResult.ok) fillConfig(configResult.config);
   await loadServices();
   renderProfileList();
+  syncModelFileInput();
   renderBotProfiles();
   renderStickerLibrary();
   setText("topStatus", configResult.ok ? "后端在线" : "静态预览");
@@ -131,6 +134,23 @@ function setupSettingsEvents() {
   $("#addBotProfileBtn")?.addEventListener("click", addBotProfile);
   $("#stickerUploadBtn")?.addEventListener("click", () => $("#stickerFileInput")?.click());
   $("#stickerFileInput")?.addEventListener("change", handleStickerUpload);
+  $("#openModelFilePickerBtn")?.addEventListener("click", openModelFilePicker);
+  $("#modelFileRefreshBtn")?.addEventListener("click", refreshModelFilePicker);
+  $("#modelFileCancelBtn")?.addEventListener("click", closeModelFilePicker);
+  document.querySelector("#modelFileModal .modal-close")?.addEventListener("click", closeModelFilePicker);
+  $("#modelFileModal")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeModelFilePicker();
+  });
+  $("#modelFileRootInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      refreshModelFilePicker();
+    }
+  });
+  $("#modelFileSearchInput")?.addEventListener("input", () => {
+    window.clearTimeout(state.modelFileSearchTimer);
+    state.modelFileSearchTimer = window.setTimeout(refreshModelFilePicker, 220);
+  });
   bindChatIdentityEvents();
   $("#toolProviderCancelBtn")?.addEventListener("click", closeToolProviderModal);
   $("#toolProviderApplyBtn")?.addEventListener("click", applyToolProviderModal);
@@ -317,6 +337,7 @@ function fillConfig(config) {
     setValue(f.id, val);
   }
   renderChatIdentities(config);
+  syncModelFileInput();
 }
 
 function collectConfig() {
@@ -374,6 +395,157 @@ function renderChatIdentity(role, config = state.currentConfig) {
   } else {
     preview.textContent = firstIdentityChar(name, def.fallbackInitial);
   }
+}
+
+function syncModelFileInput() {
+  const command = findServiceCommand("llm");
+  setValue("llmModelFilePath", extractCommandModelPath(command));
+}
+
+function findServiceCommand(serviceId) {
+  const service = (state.services || []).find((item) => item.id === serviceId);
+  return service?.command || "";
+}
+
+function openModelFilePicker() {
+  const current = value("llmModelFilePath", "").trim();
+  const cwd = (state.services || []).find((item) => item.id === "llm")?.cwd || "";
+  modelFileRoot = parentPath(current) || cwd || "";
+  setValue("modelFileRootInput", modelFileRoot);
+  setValue("modelFileSearchInput", "");
+  $("#modelFileModal").hidden = false;
+  refreshModelFilePicker();
+}
+
+function closeModelFilePicker() {
+  const modal = $("#modelFileModal");
+  if (modal) modal.hidden = true;
+}
+
+async function refreshModelFilePicker() {
+  const host = $("#modelFileList");
+  if (!host) return;
+  modelFileRoot = value("modelFileRootInput", modelFileRoot).trim();
+  host.innerHTML = '<div class="model-file-empty">读取中...</div>';
+  try {
+    const result = await listModelFiles(modelFileRoot, value("modelFileSearchInput", "").trim());
+    modelFileRoot = result.root || modelFileRoot;
+    setValue("modelFileRootInput", modelFileRoot);
+    renderModelFileList(result);
+  } catch (error) {
+    host.innerHTML = `<div class="model-file-empty">读取失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderModelFileList(result) {
+  const host = $("#modelFileList");
+  if (!host) return;
+  host.innerHTML = "";
+  const parent = result.parent || "";
+  if (parent && parent !== result.root) {
+    host.appendChild(modelDirectoryItem("..", parent));
+  }
+  for (const dir of result.directories || []) {
+    host.appendChild(modelDirectoryItem(dir.name, dir.path));
+  }
+  for (const file of result.files || []) {
+    host.appendChild(modelFileItem(file));
+  }
+  if (!host.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "model-file-empty";
+    empty.textContent = result.exists === false ? "目录不存在" : "没有找到模型文件";
+    host.appendChild(empty);
+  }
+  renderIcons();
+}
+
+function modelDirectoryItem(name, path) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "model-file-item directory";
+  btn.append(createIcon("folder"), document.createTextNode(name));
+  btn.addEventListener("click", () => {
+    modelFileRoot = path;
+    setValue("modelFileRootInput", path);
+    refreshModelFilePicker();
+  });
+  return btn;
+}
+
+function modelFileItem(file) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "model-file-item";
+  const meta = document.createElement("span");
+  meta.textContent = `${formatFileSize(file.size)} · ${file.updated_at || file.extension || ""}`;
+  const body = document.createElement("div");
+  const name = document.createElement("strong");
+  name.textContent = file.name || file.path;
+  body.append(name, meta);
+  btn.append(createIcon("file-cog"), body);
+  btn.addEventListener("click", () => chooseModelFile(file.path));
+  return btn;
+}
+
+function chooseModelFile(path) {
+  setValue("llmModelFilePath", path);
+  updateLlmCommandModelPath(path);
+  closeModelFilePicker();
+  showToast("模型文件已写入 LLM 启动命令", "success");
+}
+
+function updateLlmCommandModelPath(path) {
+  const card = document.querySelector('[data-service-id="llm"]');
+  const commandField = card?.querySelector(".profile-command");
+  if (!commandField) return;
+  commandField.value = replaceCommandModelPath(commandField.value || "", path);
+}
+
+function replaceCommandModelPath(command, path) {
+  const quoted = shellQuote(path);
+  if (/(^|\s)-m\s+("[^"]+"|'[^']+'|\S+)/.test(command)) {
+    return command.replace(/(^|\s)-m\s+("[^"]+"|'[^']+'|\S+)/, `$1-m ${quoted}`);
+  }
+  if (/(^|\s)--model\s+("[^"]+"|'[^']+'|\S+)/.test(command)) {
+    return command.replace(/(^|\s)--model\s+("[^"]+"|'[^']+'|\S+)/, `$1--model ${quoted}`);
+  }
+  if (/(^|\s)--model=("[^"]+"|'[^']+'|\S+)/.test(command)) {
+    return command.replace(/(^|\s)--model=("[^"]+"|'[^']+'|\S+)/, `$1--model=${quoted}`);
+  }
+  return `${command.trim()} -m ${quoted}`.trim();
+}
+
+function extractCommandModelPath(command) {
+  const match = String(command || "").match(/(?:^|\s)(?:-m|--model)\s+("[^"]+"|'[^']+'|\S+)|(?:^|\s)--model=("[^"]+"|'[^']+'|\S+)/);
+  if (!match) return "";
+  return (match[1] || match[2] || "").replace(/^['"]|['"]$/g, "");
+}
+
+function parentPath(path) {
+  const text = String(path || "").trim().replace(/\\/g, "/");
+  if (!text || !text.includes("/")) return "";
+  return text.slice(0, text.lastIndexOf("/")) || "/";
+}
+
+function shellQuote(path) {
+  const text = String(path || "").trim();
+  if (!text) return '""';
+  if (/^[A-Za-z0-9_./:=+\-\\]+$/.test(text)) return text;
+  return `"${text.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function formatFileSize(size) {
+  const value = Number(size || 0);
+  if (!value) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = value;
+  let index = 0;
+  while (n >= 1024 && index < units.length - 1) {
+    n /= 1024;
+    index += 1;
+  }
+  return `${n.toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
 async function handleChatAvatar(role, event) {
@@ -1055,7 +1227,7 @@ async function saveSettingsPage(options = {}) {
     renderProactiveEvents();
     renderReminders();
     renderStickerLibrary();
-    await loadServices(); renderProfileList();
+    await loadServices(); renderProfileList(); syncModelFileInput();
     renderBotProfiles();
     refreshSettingsOverview();
     window.dispatchEvent(new CustomEvent("branchwhisper:appearance-updated"));

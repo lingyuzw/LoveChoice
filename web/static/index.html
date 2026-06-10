@@ -341,6 +341,13 @@
                 <label><span>Max Tokens</span><input id="maxTokens" type="number" min="32" max="4096" step="1" /></label>
                 <label><span>History Turns</span><input id="historyTurns" type="number" min="1" max="20" step="1" /></label>
                 <label class="wide"><span>本地 Chat Completions URL</span><input id="llmUrl" type="text" /></label>
+                <label class="wide model-file-field">
+                  <span>LLM 模型文件</span>
+                  <div class="model-file-row">
+                    <input id="llmModelFilePath" type="text" placeholder="选择或粘贴 .gguf / .safetensors / .bin 模型文件路径" />
+                    <button class="secondary-action" id="openModelFilePickerBtn" type="button"><i data-lucide="folder-search"></i>选择</button>
+                  </div>
+                </label>
               </div>
             </article>
             <article class="settings-panel" id="tools">
@@ -362,7 +369,7 @@
             <article class="settings-panel dialog-features-panel" id="dialogFeatures">
               <div class="panel-head"><div><p class="eyebrow">Conversation Features</p><h2>对话能力</h2></div><span class="soft-badge">Web 优先</span></div>
               <div class="dialog-feature-grid">
-                <section class="dialog-feature-card">
+                <section class="dialog-feature-card compact-feature-card">
                   <div class="appearance-card-head"><strong>图片理解</strong><small>发送图片后生成摘要并进入本轮上下文</small></div>
                   <div class="form-grid compact">
                     <label><span>启用</span><select id="visionEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
@@ -554,6 +561,24 @@
             <button class="secondary-action" id="toolProviderCancelBtn" type="button">取消</button>
             <button class="primary-action" id="toolProviderApplyBtn" type="button"><i data-lucide="check"></i>保存工具配置</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- model file picker modal -->
+    <div class="modal-overlay" id="modelFileModal" hidden>
+      <div class="modal-panel model-file-modal-panel">
+        <div class="modal-head"><h2>选择模型文件</h2><button class="icon-button modal-close" type="button"><i data-lucide="x"></i></button></div>
+        <div class="modal-body">
+          <div class="model-file-toolbar">
+            <input id="modelFileRootInput" type="text" placeholder="模型目录" />
+            <input id="modelFileSearchInput" type="search" placeholder="搜索模型文件" />
+            <button class="secondary-action" id="modelFileRefreshBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
+          </div>
+          <div class="model-file-list" id="modelFileList"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="modelFileCancelBtn" type="button">取消</button>
         </div>
       </div>
     </div>

@@ -281,8 +281,13 @@ function applyConversation(conversation, renderMessages) {
 
 export async function selectConversation(conversationId) {
   if (!conversationId || conversationId === state.activeConversationId) return;
+  const conversation = (state.conversations || []).find((item) => item.id === conversationId);
   state.activeConversationId = conversationId;
   localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
+  if (conversation) {
+    applyConversation(conversation, true);
+    scrollTranscriptToBottom();
+  }
   reconnectDialog();
 }
 

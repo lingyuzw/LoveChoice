@@ -6,13 +6,14 @@ import json
 import re
 import time
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
 import httpx
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 
-from core.config import SessionSettings, llm_headers
+from core.config import SessionSettings, llm_headers, public_settings
 from data.conversations import ConversationStore
 from engagement.proactive import FollowupPolicy
 from media.assets import ChatImageStore, StickerStore

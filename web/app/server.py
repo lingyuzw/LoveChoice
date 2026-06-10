@@ -9,6 +9,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 import sys
+import shlex
 
 import httpx
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -77,6 +78,7 @@ SERVICE_WARMUP_TASKS: dict[str, asyncio.Task] = {}
 SERVICE_WARMUP_DONE: set[str] = set()
 SERVICE_WARMUP_STATUS: dict[str, dict] = {}
 LOCALHOST_NAMES = {"127.0.0.1", "::1", "localhost"}
+MODEL_FILE_EXTENSIONS = {".gguf", ".bin", ".safetensors", ".pt", ".pth", ".onnx"}
 
 # TTS output from the local CosyVoice endpoint is expected to be raw PCM16LE.
 # These defaults reduce clipping/pops when the HTTP stream is forwarded to the
@@ -140,6 +142,71 @@ def unique_urls(urls: list[str]) -> list[str]:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def safe_model_browse_root(value: str, fallback: Path) -> Path:
+    raw = str(value or "").strip()
+    path = Path(raw).expanduser() if raw else fallback
+    try:
+        return path.resolve()
+    except OSError:
+        return fallback.resolve()
+
+
+def model_file_payload(path: Path) -> dict:
+    try:
+        stat = path.stat()
+        size = stat.st_size
+        updated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
+    except OSError:
+        size = 0
+        updated_at = ""
+    return {
+        "name": path.name,
+        "path": str(path),
+        "size": size,
+        "updated_at": updated_at,
+        "extension": path.suffix.lower(),
+    }
+
+
+def list_model_files(root: Path, query: str = "", limit: int = 80) -> dict:
+    query_norm = str(query or "").strip().lower()
+    files = []
+    directories = []
+    if not root.exists() or not root.is_dir():
+        return {"root": str(root), "parent": str(root.parent), "directories": [], "files": [], "exists": False}
+    try:
+        children = sorted(root.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+    except OSError:
+        children = []
+    for child in children:
+        if child.name.startswith("."):
+            continue
+        if child.is_dir():
+            directories.append({"name": child.name, "path": str(child)})
+            continue
+        if child.suffix.lower() not in MODEL_FILE_EXTENSIONS:
+            continue
+        if query_norm and query_norm not in child.name.lower() and query_norm not in str(child).lower():
+            continue
+        files.append(model_file_payload(child))
+        if len(files) >= limit:
+            break
+    return {"root": str(root), "parent": str(root.parent), "directories": directories[:80], "files": files, "exists": True}
+
+
+def extract_model_path_from_command(command: str) -> str:
+    try:
+        parts = shlex.split(str(command or ""), posix=os.name != "nt")
+    except ValueError:
+        return ""
+    for index, part in enumerate(parts):
+        if part in {"-m", "--model"} and index + 1 < len(parts):
+            return parts[index + 1]
+        if part.startswith("--model="):
+            return part.split("=", 1)[1]
+    return ""
 
 
 async def resolve_branchwhisper_url(request: Request, preferred: str = "") -> str:
@@ -545,6 +612,16 @@ def create_app(args) -> FastAPI:
     async def update_tool_provider_config(request: Request, payload: dict | None = Body(default=None)):
         require_local_service_control(request)
         return {"tools": app.state.tool_providers.update(payload or {})}
+
+    @app.get("/api/files/models")
+    async def model_files(request: Request, root: str = "", query: str = ""):
+        require_local_service_control(request)
+        llm_service = app.state.service_manager.services.get("llm", {})
+        llm_cwd = Path(str(llm_service.get("cwd") or APP_DIR)).expanduser()
+        model_path = extract_model_path_from_command(str(llm_service.get("command") or ""))
+        default_root = (llm_cwd / model_path).parent if model_path else llm_cwd
+        browse_root = safe_model_browse_root(root, default_root)
+        return list_model_files(browse_root, query=query)
 
     @app.get("/api/bot-profiles")
     async def bot_profiles(request: Request):

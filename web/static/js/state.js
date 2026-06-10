@@ -186,6 +186,7 @@ export const state = {
   reminders: [],
   proactiveConfig: {},
   proactiveEvents: [],
+  modelFileSearchTimer: 0,
   conversationFilter: "",
   conversationArchivedMode: "active",
   conversationScope: "recent",
