@@ -17,9 +17,9 @@ const MESSAGE_TYPE_BOT = 2;
 const MESSAGE_STATE_FINISH = 2;
 const ITEM_VOICE = 3;
 const UPLOAD_MEDIA_TYPE_VOICE = 4;
-const VOICE_ENCODE_OGG_OPUS = 8;
-const WEIXIN_VOICE_SAMPLE_RATE = 48_000;
-const WEIXIN_VOICE_BITRATE = "64k";
+const VOICE_ENCODE_OGG_SPEEX = 8;
+const WEIXIN_VOICE_SAMPLE_RATE = 16_000;
+const WEIXIN_VOICE_BITRATE = "32k";
 const WEIXIN_VOICE_GAIN_DB = 8;
 const MAX_VOICE_SECONDS = 60;
 
@@ -157,7 +157,7 @@ async function uploadBufferToCdn({ buffer, uploadFullUrl, uploadParam, filekey, 
   throw lastError || new Error("CDN upload failed");
 }
 
-async function transcodeToOggOpus(inputPath) {
+async function transcodeToOggSpeex(inputPath) {
   const outputPath = path.join(os.tmpdir(), `branchwhisper-weixin-voice-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.ogg`);
   await execFileAsync("ffmpeg", [
     "-hide_banner",
@@ -178,7 +178,7 @@ async function transcodeToOggOpus(inputPath) {
     "-ac",
     "1",
     "-c:a",
-    "libopus",
+    "libspeex",
     "-b:a",
     WEIXIN_VOICE_BITRATE,
     "-f",
@@ -270,7 +270,7 @@ async function sendVoice(args) {
   let mediaPath = "";
   try {
     const sourceStats = await probeAudioStats(voiceFile);
-    mediaPath = await transcodeToOggOpus(voiceFile).catch((error) => {
+    mediaPath = await transcodeToOggSpeex(voiceFile).catch((error) => {
       error.stage = "transcode";
       throw error;
     });
@@ -338,7 +338,7 @@ async function sendVoice(args) {
                   aes_key: Buffer.from(aeskey.toString("hex")).toString("base64"),
                   encrypt_type: 1,
                 },
-                encode_type: VOICE_ENCODE_OGG_OPUS,
+                encode_type: VOICE_ENCODE_OGG_SPEEX,
                 sample_rate: WEIXIN_VOICE_SAMPLE_RATE,
                 playtime: playtimeMs,
                 text,
@@ -358,8 +358,8 @@ async function sendVoice(args) {
       ok: true,
       message_id: clientId,
       stage: "sent",
-      transcode_format: "ogg_opus",
-      encode_type: VOICE_ENCODE_OGG_OPUS,
+      transcode_format: "ogg_speex",
+      encode_type: VOICE_ENCODE_OGG_SPEEX,
       sample_rate: WEIXIN_VOICE_SAMPLE_RATE,
       gain_db: WEIXIN_VOICE_GAIN_DB,
       playtime_ms: playtimeMs,
