@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { Archive, Download, ImagePlus, MessageSquarePlus, Mic, MicOff, RefreshCw, Search, Send, Square, Star, Trash2, Volume2, VolumeX } from "@lucide/vue";
+import { Archive, Download, ImagePlus, MessageSquarePlus, Mic, MicOff, Search, Send, Square, Star, Trash2, Volume2, VolumeX } from "@lucide/vue";
 import { uploadChatImage } from "@/api/assets";
 import { conversationExportUrl, updateConversation, type ChatAttachment, type ChatMessage, type ConversationSummary } from "@/api/conversations";
 import { useAppStore } from "@/stores/app";
@@ -121,13 +121,6 @@ function newConversation() {
   resetMetrics("新对话");
   connectSocket("");
   scrollToBottom({ force: true });
-}
-
-async function removeActive() {
-  const id = conversations.active?.id;
-  if (!id) return;
-  await conversations.remove(id);
-  newConversation();
 }
 
 async function removeConversation(item: ConversationSummary) {
@@ -436,109 +429,107 @@ function displayName(role: string, message: ChatMessage) {
 </script>
 
 <template>
-  <main class="chat-page">
-    <aside class="chat-sidebar">
+  <main class="page-view">
+    <div class="voice-console">
+      <aside class="sidebar">
       <div class="conversation-top">
         <button class="conversation-action-row" type="button" @click="newConversation">
-          <MessageSquarePlus :size="16" /> 新聊天
+          <MessageSquarePlus :size="16" /> 新建对话
         </button>
         <label class="conversation-search-row">
           <Search :size="16" />
           <input v-model="conversations.query" placeholder="搜索聊天" @input="conversations.reloadList(true)" />
         </label>
+        <div class="conversation-tabs">
+          <button type="button" :class="{ active: activeScope === 'recent' }" @click="switchScope('recent')">最近</button>
+          <button type="button" :class="{ active: activeScope === 'weixin' }" @click="switchScope('weixin')">微信聊天</button>
+        </div>
         <button class="conversation-action-row subtle" type="button">
           <Archive :size="16" /> 归档
         </button>
       </div>
 
-      <div class="conversation-tabs">
-        <button type="button" :class="{ active: activeScope === 'recent' }" @click="switchScope('recent')">最近</button>
-        <button type="button" :class="{ active: activeScope === 'weixin' }" @click="switchScope('weixin')">微信聊天</button>
+      <div class="conversation-rail">
+        <div class="rail-head">
+          <p class="eyebrow rail-label">{{ activeScope === "weixin" ? "微信聊天" : "最近" }}</p>
+          <span>{{ visibleConversations.length }}</span>
+        </div>
+
+        <section class="conversation-list">
+          <article
+            v-for="item in visibleConversations"
+            :key="item.id"
+            class="conversation-item"
+            :class="{ active: conversations.active?.id === item.id }"
+          >
+            <button class="conversation-open" type="button" @click="openConversation(item.id)">
+              <strong>{{ item.title || (isWeixinConversation(item) ? "微信聊天" : "新的对话") }}</strong>
+              <span>{{ item.summary || item.last_message || "空会话" }}</span>
+              <small>{{ item.favorite ? "★ " : "" }}{{ isWeixinConversation(item) ? "微信 · " : "" }}{{ item.updated_at?.slice(0, 16) || "--" }}</small>
+            </button>
+            <div class="conversation-actions">
+              <button class="conversation-icon" type="button" title="收藏" @click.stop="toggleFavorite(item)"><Star :size="14" /></button>
+              <button class="conversation-icon" type="button" title="导出" @click.stop="exportConversation(item)"><Download :size="14" /></button>
+              <button class="conversation-icon" type="button" title="归档" @click.stop="archiveConversation(item)"><Archive :size="14" /></button>
+              <button class="conversation-icon danger" type="button" title="删除" @click.stop="removeConversation(item)"><Trash2 :size="14" /></button>
+            </div>
+          </article>
+          <p v-if="!visibleConversations.length" class="conversation-empty">
+            {{ activeScope === "weixin" ? "还没有微信聊天。先在微信里发一条消息。" : "还没有保存的对话。发送第一条消息后会出现在这里。" }}
+          </p>
+        </section>
       </div>
-
-      <div class="rail-head">
-        <strong>{{ activeScope === "weixin" ? "微信聊天" : "最近" }}</strong>
-        <span>{{ visibleConversations.length }}</span>
-      </div>
-
-      <section class="conversation-list">
-        <article
-          v-for="item in visibleConversations"
-          :key="item.id"
-          class="conversation-item"
-          :class="{ active: conversations.active?.id === item.id }"
-        >
-          <button class="conversation-open" type="button" @click="openConversation(item.id)">
-            <strong>{{ item.title || (isWeixinConversation(item) ? "微信聊天" : "新的对话") }}</strong>
-            <span>{{ item.summary || item.last_message || "空会话" }}</span>
-            <small>{{ item.favorite ? "★ " : "" }}{{ isWeixinConversation(item) ? "微信 · " : "" }}{{ item.updated_at?.slice(0, 16) || "--" }}</small>
-          </button>
-          <div class="conversation-actions">
-            <button class="conversation-icon" type="button" title="收藏" @click.stop="toggleFavorite(item)"><Star :size="14" /></button>
-            <button class="conversation-icon" type="button" title="导出" @click.stop="exportConversation(item)"><Download :size="14" /></button>
-            <button class="conversation-icon" type="button" title="归档" @click.stop="archiveConversation(item)"><Archive :size="14" /></button>
-            <button class="conversation-icon danger" type="button" title="删除" @click.stop="removeConversation(item)"><Trash2 :size="14" /></button>
-          </div>
-        </article>
-        <p v-if="!visibleConversations.length" class="conversation-empty">
-          {{ activeScope === "weixin" ? "还没有微信聊天。先在微信里发一条消息。" : "还没有保存的对话。发送第一条消息后会出现在这里。" }}
-        </p>
-      </section>
-
-      <section class="pipeline-compact">
-        <div><span>ASR</span><strong>{{ metrics.asr }}</strong></div>
-        <div><span>LLM</span><strong>{{ metrics.llm }}</strong></div>
-        <div><span>TTS</span><strong>{{ metrics.tts }}</strong></div>
-        <div><span>Trace</span><strong>{{ metrics.trace }}</strong></div>
-      </section>
 
       <section class="sidebar-scope">
         <div class="scope-header"><span>{{ metrics.status }}</span><span>{{ Math.round(level * 100) }}%</span></div>
         <div class="level-track"><span class="level-bar" :style="{ width: `${Math.round(level * 100)}%` }"></span></div>
       </section>
+
+      <section class="pipeline-compact">
+        <div class="pipeline-row" :class="{ active: metrics.status === '收音' }"><span class="pdot"></span><strong>VAD</strong><small>{{ metrics.vad }}</small></div>
+        <div class="pipeline-row"><span class="pdot"></span><strong>ASR</strong><small>{{ metrics.asr }}</small></div>
+        <div class="pipeline-row"><span class="pdot"></span><strong>LLM</strong><small>{{ metrics.llm }}</small></div>
+        <div class="pipeline-row"><span class="pdot"></span><strong>TTS</strong><small>{{ metrics.tts }}</small></div>
+      </section>
+
+      <section class="runtime-chips sidebar-chips">
+        <span><b>ASR</b><strong>{{ metrics.asr }}</strong></span>
+        <span><b>LLM</b><strong>{{ metrics.llm }}</strong></span>
+        <span><b>TTS</b><strong>{{ metrics.tts }}</strong></span>
+        <span><b>TRACE</b><strong>{{ metrics.trace }}</strong></span>
+      </section>
     </aside>
 
     <section class="chat-area">
-      <header class="chat-header">
-        <div>
-          <h1>{{ conversations.active?.title || "你在忙什么？" }}</h1>
-          <small>{{ connected ? "已连接" : "连接中" }} · {{ metrics.status }}</small>
-        </div>
-        <div class="chat-header-actions">
-          <button class="icon-button" type="button" title="刷新" @click="conversations.refreshActive()"><RefreshCw :size="16" /></button>
-          <button v-if="conversations.active" class="icon-button danger" type="button" title="删除当前对话" @click="removeActive">
-            <Trash2 :size="16" />
-          </button>
-        </div>
-      </header>
-
       <div v-if="!hasMessages" class="chat-welcome">
         <div class="welcome-brand">
           <span class="welcome-icon">BW</span>
-          <h1>你在忙什么？</h1>
-          <p>可以直接打字、说话，也可以上传图片让枝语理解。</p>
+          <h1>有什么我可以帮你的？</h1>
+          <p>打开麦克风开始语音对话，或输入文字发送消息</p>
         </div>
       </div>
 
-      <div v-show="hasMessages" ref="scroller" class="transcript">
-        <article v-for="(message, index) in liveMessages" :key="message.id || `${index}-${message.role}`" class="message-row" :class="message.role">
-          <div class="message-avatar">{{ message.role === "user" ? "我" : "枝" }}</div>
-          <div class="message-body">
-            <small class="message-name">{{ displayName(message.role, message) }}</small>
-            <div v-if="message.content" class="message" :class="message.role">{{ message.content }}</div>
-            <div v-if="message.attachments?.length" class="message-attachments">
-              <template v-for="attachment in message.attachments" :key="attachment.asset_id || attachment.url">
-                <figure v-if="attachment.type === 'image'" class="message-image">
-                  <img :src="attachment.url" :alt="attachment.summary || attachment.name || '图片'" />
-                  <figcaption v-if="attachment.summary">{{ attachment.summary }}</figcaption>
-                </figure>
-                <div v-else class="message-sticker">
-                  <img :src="attachment.url" :alt="attachment.tag || attachment.name || '表情包'" />
-                </div>
-              </template>
+      <div v-show="hasMessages" class="chat-messages">
+        <div ref="scroller" class="transcript">
+          <article v-for="(message, index) in liveMessages" :key="message.id || `${index}-${message.role}`" class="message-row" :class="message.role">
+            <div class="message-avatar">{{ message.role === "user" ? "我" : "枝" }}</div>
+            <div class="message-body">
+              <small class="message-name">{{ displayName(message.role, message) }}</small>
+              <div v-if="message.content" class="message" :class="message.role">{{ message.content }}</div>
+              <div v-if="message.attachments?.length" class="message-attachments">
+                <template v-for="attachment in message.attachments" :key="attachment.asset_id || attachment.url">
+                  <figure v-if="attachment.type === 'image'" class="message-image">
+                    <img :src="attachment.url" :alt="attachment.summary || attachment.name || '图片'" />
+                    <figcaption v-if="attachment.summary">{{ attachment.summary }}</figcaption>
+                  </figure>
+                  <div v-else class="message-sticker">
+                    <img :src="attachment.url" :alt="attachment.tag || attachment.name || '表情包'" />
+                  </div>
+                </template>
+              </div>
             </div>
-          </div>
-        </article>
+          </article>
+        </div>
       </div>
 
       <footer class="chat-composer">
@@ -566,5 +557,6 @@ function displayName(role: string, message: ChatMessage) {
         <input ref="imageInput" type="file" accept="image/*" multiple hidden @change="handleImageSelected" />
       </footer>
     </section>
+    </div>
   </main>
 </template>

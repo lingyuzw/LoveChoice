@@ -12,7 +12,7 @@ import sys
 import httpx
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -483,9 +483,9 @@ def create_app(args) -> FastAPI:
     )
 
     @app.middleware("http")
-    async def no_cache_static(request: Request, call_next):
+    async def no_cache_vue_shell(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path == "/" or request.url.path.startswith("/app/"):
+        if request.url.path in {"/", "/app", "/app/"} or (request.url.path.startswith("/app/") and not request.url.path.startswith("/app/assets/")):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
         return response
@@ -516,8 +516,18 @@ def create_app(args) -> FastAPI:
     async def vue_app(path: str = ""):
         index_path = FRONTEND_DIST_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
         raise HTTPException(status_code=503, detail="Frontend is not built. Run `cd frontend && npm run build`.")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+            '<rect width="64" height="64" rx="12" fill="#d8aa50"/>'
+            '<text x="32" y="39" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="800" fill="#1b1409">BW</text>'
+            "</svg>"
+        )
+        return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
     @app.websocket("/ws/dialog")
     async def dialog_socket(websocket: WebSocket):

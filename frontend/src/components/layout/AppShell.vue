@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Activity, Bot, Brain, Library, MessagesSquare, Settings2 } from "@lucide/vue";
-import { onMounted } from "vue";
-import { RouterLink, RouterView } from "vue-router";
+import { onMounted, watchEffect } from "vue";
+import { RouterLink, RouterView, useRoute } from "vue-router";
 import { useAppStore } from "@/stores/app";
 
 const app = useAppStore();
+const route = useRoute();
 
 const navItems = [
   { to: "/", label: "对话", icon: MessagesSquare },
@@ -18,6 +19,11 @@ const navItems = [
 onMounted(() => {
   void app.bootstrap();
 });
+
+watchEffect(() => {
+  const page = route.path === "/" ? "dashboard" : route.path.replace(/^\//, "") || "dashboard";
+  document.body.dataset.page = page;
+});
 </script>
 
 <template>
@@ -27,12 +33,12 @@ onMounted(() => {
         <span class="brand-mark">BW</span>
         <span>
           <strong>BranchWhisper</strong>
-          <small>Local AI console</small>
+          <small>Local Voice AI</small>
         </span>
       </RouterLink>
 
       <nav class="nav-tabs" aria-label="主导航">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to">
+        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" active-class="active">
           <component :is="item.icon" :size="16" />
           {{ item.label }}
         </RouterLink>
