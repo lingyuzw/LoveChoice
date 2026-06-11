@@ -54,7 +54,7 @@ export async function initDashboard() {
   setupConversationRefresh({ renderConversationList, syncChatView, isWeixinConversation });
   setPipelineUpdater((stage, label) => updatePipelineCompact(stage, label));
   setTranscriptCallback(() => {
-    refreshConversationsNow({ reason: "transcript", force: true });
+    refreshConversationsNow({ reason: "transcript", skipActive: true });
   });
   bindAppearanceRefresh();
   bindRuntimeConfigRefresh();
@@ -326,7 +326,7 @@ function renderScopedConversationList() {
     const meta = document.createElement("small");
     meta.textContent = `${conversation.favorite ? "★ " : ""}${conversationMetaLabel(conversation)}`;
     openBtn.append(title, preview, meta);
-    openBtn.addEventListener("click", () => selectConversation(conversation.id, { force: true }));
+    openBtn.addEventListener("click", () => selectConversation(conversation.id));
 
     const actions = document.createElement("div");
     actions.className = "conversation-actions";

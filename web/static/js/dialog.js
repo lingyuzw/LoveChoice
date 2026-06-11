@@ -12,6 +12,8 @@ let onTranscriptUpdated = null;
 let onPipelineUpdate = null;
 let appearanceEventsBound = false;
 let configEventsBound = false;
+let lastRenderedTranscriptKey = "";
+let transcriptBatchRendering = false;
 
 export function setTranscriptCallback(fn) { onTranscriptUpdated = fn; }
 export function setPipelineUpdater(fn) { onPipelineUpdate = fn; }
@@ -20,6 +22,7 @@ export function bindAppearanceRefresh() {
   if (appearanceEventsBound) return;
   appearanceEventsBound = true;
   window.addEventListener("branchwhisper:appearance-updated", () => {
+    lastRenderedTranscriptKey = "";
     if (state.activeConversation) renderTranscript(state.activeConversation.messages || []);
   });
   bindRuntimeConfigRefresh();
@@ -162,7 +165,7 @@ function setMetric(name, value) {
 
 function addMsg(role, text, meta = {}) {
   const t = $("#transcript"); if (!t) return null;
-  const shouldFollow = isTranscriptNearBottom(t);
+  const shouldFollow = !transcriptBatchRendering && isTranscriptNearBottom(t);
   const row = document.createElement("div");
   row.className = `message-row ${role}`;
   const avatar = document.createElement("div");
@@ -244,6 +247,7 @@ export function clearTranscript() {
   const t = $("#transcript");
   if (t) t.replaceChildren();
   state.currentAssistant = null;
+  lastRenderedTranscriptKey = "";
 }
 function isTranscriptNearBottom(t = $("#transcript"), threshold = 96) {
   if (!t) return true;
@@ -259,15 +263,32 @@ export function scrollTranscriptToBottom(options = {}) {
     else t.scrollTop = t.scrollHeight;
   };
   run();
+  if (options.once) return;
   requestAnimationFrame(run);
-  window.setTimeout(run, 80);
 }
 function renderTranscript(msgs) {
+  const key = transcriptRenderKey(msgs);
+  if (key && key === lastRenderedTranscriptKey) return;
+  const t = $("#transcript");
+  const shouldFollow = isTranscriptNearBottom(t);
+  transcriptBatchRendering = true;
   clearTranscript();
   for (const m of msgs) {
     if (["user","assistant","system"].includes(m.role)) addMsg(m.role, m.content || "", m);
   }
-  scrollTranscriptToBottom();
+  transcriptBatchRendering = false;
+  lastRenderedTranscriptKey = key;
+  if (shouldFollow || !msgs.length) scrollTranscriptToBottom({ smooth: false, once: true });
+}
+
+function transcriptRenderKey(msgs = []) {
+  const parts = (msgs || []).map((m, index) => {
+    const attachments = Array.isArray(m.attachments) ? m.attachments.length : 0;
+    const content = String(m.content || "");
+    const sample = content.length > 96 ? `${content.slice(0, 48)}…${content.slice(-48)}` : content;
+    return `${m.id || index}:${m.role || ""}:${m.updated_at || m.created_at || ""}:${content.length}:${sample}:${attachments}`;
+  });
+  return `${state.activeConversationId || "new"}::${parts.join("|")}`;
 }
 
 function renderMessageAttachments(attachments) {
@@ -323,7 +344,7 @@ export function renderExternalConversation(conversation) {
 
 export async function selectConversation(conversationId, options = {}) {
   if (!conversationId) return;
-  if (conversationId === state.activeConversationId && !options.force) return;
+  if (conversationId === state.activeConversationId) return;
   const summary = (state.conversations || []).find((item) => item.id === conversationId);
   let conversation = null;
   try {
@@ -336,7 +357,7 @@ export async function selectConversation(conversationId, options = {}) {
   if (conversation || summary) {
     conversation = conversation || summary;
     applyConversation(conversation, true);
-    scrollTranscriptToBottom();
+    scrollTranscriptToBottom({ smooth: false, once: true });
   }
   if (!options.skipReconnect) reconnectDialog();
 }

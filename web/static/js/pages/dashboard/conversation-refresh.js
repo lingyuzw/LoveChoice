@@ -67,7 +67,9 @@ export async function refreshConversationsNow(options = {}) {
   if (!changed) return false;
 
   callbacks.renderConversationList?.();
-  await refreshActiveConversation({ previousSnapshot: before, force: Boolean(options.force) });
+  if (!options.skipActive) {
+    await refreshActiveConversation({ previousSnapshot: before, force: Boolean(options.force) });
+  }
   callbacks.syncChatView?.();
   return true;
 }
