@@ -155,6 +155,7 @@ function updateTtsToggleIcon() {
 
 function syncChatView() {
   const msgs = document.querySelectorAll("#transcript .message");
+  const hadMessages = hasMessages;
   hasMessages = msgs.length > 0;
 
   const welcome = $("#chatWelcome");
@@ -170,7 +171,7 @@ function syncChatView() {
     if (messages) messages.style.display = "none";
     if (composer) composer.style.display = "none";
   }
-  if (hasMessages) scrollTranscriptToBottom();
+  if (hasMessages && !hadMessages) scrollTranscriptToBottom({ smooth: false });
 }
 
 function sendText(inputId) {

@@ -38,6 +38,7 @@ SESSION_EXPIRED = -14
 
 
 STOP = False
+IMAGE_FOLLOWUP_WAIT_SEC = 3.0
 
 
 def build_client_version(version: str) -> int:
@@ -559,25 +560,18 @@ def message_fingerprint(account_id: str, msg: dict, text: str) -> str:
     return hashlib.sha256(material.encode("utf-8", errors="ignore")).hexdigest()
 
 
-def process_message(
+def dispatch_message(
     client: httpx.Client,
     state_dir: Path,
     branchwhisper_url: str,
     integration_id: str,
     account: dict,
     msg: dict,
+    text: str,
+    images: list[dict] | None,
     seen: set[str],
 ) -> None:
-    if msg.get("message_type") == MESSAGE_TYPE_BOT:
-        return
-    text = body_from_items(msg.get("item_list"))
-    images = download_inbound_images(state_dir, account, msg)
-    if not text:
-        if any(item.get("ok") for item in images):
-            text = "[图片]"
-        else:
-            log(f"skip non-text message account={account['account_id']} from={msg.get('from_user_id')}")
-            return
+    images = images or []
     if images:
         ok_images = sum(1 for item in images if item.get("ok"))
         errors = "; ".join(str(item.get("error") or "") for item in images if item.get("error"))
@@ -599,6 +593,19 @@ def process_message(
     log(f"inbound account={account['account_id']} from={from_user_id} text={text[:120]}")
     branch_started = time.perf_counter()
     result = call_branchwhisper(branchwhisper_url, integration_id, account["account_id"], msg, text, images=images)
+    handle_branchwhisper_result(client, branchwhisper_url, integration_id, account, from_user_id, context_token, result, branch_started)
+
+
+def handle_branchwhisper_result(
+    client: httpx.Client,
+    branchwhisper_url: str,
+    integration_id: str,
+    account: dict,
+    from_user_id: str,
+    context_token: str,
+    result: dict,
+    branch_started: float,
+) -> None:
     branch_ms = int((time.perf_counter() - branch_started) * 1000)
     reply = str(result.get("reply_text") or "").strip()
     reply_parts = [str(part).strip() for part in (result.get("reply_parts") or []) if str(part).strip()]
@@ -614,32 +621,19 @@ def process_message(
                 if index < len(reply_parts) - 1:
                     time.sleep(0.18)
             send_ms = int((time.perf_counter() - send_started) * 1000)
-            total_ms = int((time.perf_counter() - branch_started) * 1000)
+            timings = result.get("timings") if isinstance(result.get("timings"), dict) else {}
             report_branchwhisper_timing(
                 branchwhisper_url,
                 integration_id,
                 trace_id,
-                {
-                    "dialog_ms": branch_ms,
-                    "send_ms": send_ms,
-                    "bridge_ms": total_ms,
-                    "send_status": "sent",
-                    "text_parts": len(reply_parts),
-                },
+                {"send_ms": send_ms, "branch_ms": branch_ms, "text_parts": len(reply_parts)},
             )
             log(
-                f"sent text account={account['account_id']} to={from_user_id} parts={len(reply_parts)} client_ids={','.join(message_ids)} "
-                f"branch_ms={branch_ms} send_ms={send_ms} timings={result.get('timings') or {}}"
+                f"sent text account={account['account_id']} to={from_user_id} parts={len(reply_parts)} "
+                f"client_ids={','.join(message_ids)} branch_ms={branch_ms} send_ms={send_ms} timings={timings}"
             )
         except Exception as exc:
-            send_ms = int((time.perf_counter() - send_started) * 1000)
-            report_branchwhisper_timing(
-                branchwhisper_url,
-                integration_id,
-                trace_id,
-                {"dialog_ms": branch_ms, "send_ms": send_ms, "send_status": "failed", "send_error": str(exc)[:240]},
-            )
-            raise
+            log(f"send text failed account={account['account_id']} to={from_user_id} err={exc}")
     voice_sent = send_voice_reply(
         branchwhisper_url=branchwhisper_url,
         integration_id=integration_id,
@@ -671,6 +665,59 @@ def process_message(
         result=result,
     )
 
+
+def process_message(
+    client: httpx.Client,
+    state_dir: Path,
+    branchwhisper_url: str,
+    integration_id: str,
+    account: dict,
+    msg: dict,
+    seen: set[str],
+    pending_images: dict[str, dict] | None = None,
+) -> None:
+    if msg.get("message_type") == MESSAGE_TYPE_BOT:
+        return
+    account["state_dir"] = str(state_dir)
+    text = body_from_items(msg.get("item_list"))
+    images = download_inbound_images(state_dir, account, msg)
+    if not text:
+        if any(item.get("ok") for item in images):
+            text = "[图片]"
+        else:
+            log(f"skip non-text message account={account['account_id']} from={msg.get('from_user_id')}")
+            return
+    from_user_id = str(msg.get("from_user_id") or "")
+    pending_key = f"{account['account_id']}:{from_user_id}"
+    if pending_images is not None and images and text == "[图片]":
+        pending_images[pending_key] = {"created_at": time.monotonic(), "account": account, "msg": msg, "text": text, "images": images}
+        log(f"delayed image-only message account={account['account_id']} from={from_user_id} wait_sec={IMAGE_FOLLOWUP_WAIT_SEC:g}")
+        return
+    if pending_images is not None and text and text != "[图片]" and pending_key in pending_images:
+        pending = pending_images.pop(pending_key)
+        images = [*(pending.get("images") or []), *images]
+        text = f"{pending.get('text') or '[图片]'}\n{text}".strip()
+        log(f"merged image follow-up account={account['account_id']} from={from_user_id} text={text[:120]}")
+    dispatch_message(client, state_dir, branchwhisper_url, integration_id, account, msg, text, images, seen)
+
+
+def flush_pending_images(
+    client: httpx.Client,
+    state_dir: Path,
+    branchwhisper_url: str,
+    integration_id: str,
+    pending_images: dict[str, dict],
+    seen: set[str],
+) -> None:
+    now = time.monotonic()
+    expired = [key for key, item in pending_images.items() if now - float(item.get("created_at") or now) >= IMAGE_FOLLOWUP_WAIT_SEC]
+    for key in expired:
+        item = pending_images.pop(key, None)
+        if not item:
+            continue
+        account = item["account"]
+        log(f"flushing delayed image-only message account={account['account_id']} key={key}")
+        dispatch_message(client, state_dir, branchwhisper_url, integration_id, account, item["msg"], item.get("text") or "[图片]", item.get("images") or [], seen)
 
 def choose_accounts(state_dir: Path, account_id: str = "") -> list[dict]:
     account_ids = [account_id] if account_id else list_account_ids(state_dir)
@@ -723,11 +770,13 @@ def main() -> int:
 
     sync_bufs = {account["account_id"]: load_sync_buf(state_dir, account["account_id"]) for account in accounts}
     seen: set[str] = set()
+    pending_images: dict[str, dict] = {}
     with httpx.Client() as client:
         for account in accounts:
             notify_start(client, account)
         try:
             while not STOP:
+                flush_pending_images(client, state_dir, args.branchwhisper_url, args.integration_id, pending_images, seen)
                 for account in accounts:
                     if STOP:
                         break
@@ -770,15 +819,18 @@ def main() -> int:
                                     account,
                                     msg,
                                     seen,
+                                    pending_images,
                                 )
                             except Exception as exc:
                                 log(
                                     f"message processing error account={account_id} "
                                     f"message_id={msg.get('message_id')} err={exc}"
                                 )
+                    flush_pending_images(client, state_dir, args.branchwhisper_url, args.integration_id, pending_images, seen)
                 if args.once:
                     break
         finally:
+            flush_pending_images(client, state_dir, args.branchwhisper_url, args.integration_id, pending_images, seen)
             for account in accounts:
                 notify_stop(client, account)
     log("bridge stopped")

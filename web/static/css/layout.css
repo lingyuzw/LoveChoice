@@ -23,6 +23,16 @@
 .page-view { min-height: calc(100vh - var(--topbar-h)); }
 .page-view .voice-console { height: calc(100vh - var(--topbar-h)); }
 
+body[data-page="dashboard"] {
+  overflow: hidden;
+}
+
+body[data-page="dashboard"] .page-view {
+  height: calc(100vh - var(--topbar-h));
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* dashboard: 2-column */
 .voice-console {
   height: calc(100vh - var(--topbar-h));
@@ -64,14 +74,62 @@
 }
 .pipeline-row.active .pdot { background: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 .pipeline-row.done .pdot { background: var(--success); box-shadow: 0 0 0 3px var(--success-glow); }
-.pipeline-row strong { color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.pipeline-row small { color: var(--text-muted); font-size: 10px; }
+.pipeline-row strong {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.pipeline-row small {
+  max-width: 92px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pipeline-row.active strong { color: var(--primary); }
 .pipeline-row.done strong { color: var(--success); }
 .pipeline-row.active small, .pipeline-row.done small { color: var(--text-soft); }
 
-.sidebar-chips { display: flex; gap: 4px; }
-.sidebar-chips span { flex: 1; min-width: 0; text-align: center; padding: 6px 4px; }
+.sidebar-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sidebar-chips span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 5px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.sidebar-chips b {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.sidebar-chips strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: calc(12px * var(--ui-font-scale));
+  font-weight: 750;
+  line-height: 1.15;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* services page */
 .ops-page {
