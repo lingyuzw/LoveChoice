@@ -1245,17 +1245,20 @@ class ExternalDialogEngine:
                 "attachments": image_attachments,
             }
         ]
+        assistant_attachments = [] if image_vision_failed else self.choose_reply_sticker(runtime_settings, conversation["id"], text, reply_text)
         if reply_text.strip():
-            messages_to_store.append(
-                {
-                    "role": "assistant",
-                    "content": reply_text,
-                    "source": platform_id,
-                    "platform_id": platform_id,
-                    "bot_profile_id": bot_profile.get("id") or "default",
-                    "attachments": [] if image_vision_failed else self.choose_reply_sticker(runtime_settings, conversation["id"], text, reply_text),
-                }
-            )
+            stored_parts = reply_parts or [reply_text]
+            for index, part in enumerate(stored_parts):
+                messages_to_store.append(
+                    {
+                        "role": "assistant",
+                        "content": part,
+                        "source": platform_id,
+                        "platform_id": platform_id,
+                        "bot_profile_id": bot_profile.get("id") or "default",
+                        "attachments": assistant_attachments if index == len(stored_parts) - 1 else [],
+                    }
+                )
         self.conversation_store.append_messages(conversation["id"], messages_to_store, title_hint=text)
         if reply_text.strip():
             self.run_background(platform_id, trace_id, self.remember_turn(runtime_settings, text, reply_text), "memory")
@@ -1303,7 +1306,7 @@ class ExternalDialogEngine:
             "conversation_id": conversation["id"],
             "reply_text": reply_text,
             "reply_parts": reply_parts,
-            "attachments": messages_to_store[-1].get("attachments", []) if messages_to_store and messages_to_store[-1].get("role") == "assistant" else [],
+            "attachments": assistant_attachments,
             "voice_requested": voice_requested,
             "send_voice": send_voice,
             "voice_file": voice_file,

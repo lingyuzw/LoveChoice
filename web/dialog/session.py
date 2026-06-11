@@ -44,6 +44,7 @@ from service_runtime.audio_pipeline import (
 from service_runtime.vad import MIC_SAMPLE_RATE, VadModelStore, VoiceVadSession
 from tools.direct_answers import direct_answer_from_tool
 from tools.runtime_brain import MemoryStore, ToolManager, parse_tool_call
+from core.text_utils import split_reply_messages
 
 END = object()
 GLOBAL_TTS_LOCK = asyncio.Lock()
@@ -369,7 +370,7 @@ class DialogSession:
                 await self.stream_direct_tts(repeat_text)
                 self.messages.append({"role": "user", "content": user_text})
                 self.messages.append({"role": "assistant", "content": repeat_text})
-                self.persist_messages([{"role": "assistant", "content": repeat_text}])
+                self.persist_assistant_reply(repeat_text)
                 await self.send_event("conversation_saved", conversation=self.conversation)
                 self.trim_history()
                 return
@@ -382,7 +383,7 @@ class DialogSession:
                 await self.send_event("llm_delta", text=question)
                 self.messages.append({"role": "user", "content": user_text})
                 self.messages.append({"role": "assistant", "content": question})
-                self.persist_messages([{"role": "assistant", "content": question, "source": "followup"}])
+                self.persist_assistant_reply(question, source="followup")
                 await self.send_event("conversation_saved", conversation=self.conversation)
                 self.trim_history()
                 return
@@ -403,7 +404,7 @@ class DialogSession:
                     assistant_attachments = self.choose_reply_sticker(user_text, direct_answer, source)
                     if assistant_attachments:
                         await self.send_event("assistant_attachment", attachments=assistant_attachments)
-                    self.persist_messages([{"role": "assistant", "content": direct_answer, "attachments": assistant_attachments}])
+                    self.persist_assistant_reply(direct_answer, attachments=assistant_attachments)
                     await self.send_event("conversation_saved", conversation=self.conversation)
                     self.run_background(
                         self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), direct_answer),
@@ -444,7 +445,7 @@ class DialogSession:
                 assistant_attachments = self.choose_reply_sticker(user_text, full_answer, source)
                 if assistant_attachments:
                     await self.send_event("assistant_attachment", attachments=assistant_attachments)
-                self.persist_messages([{"role": "assistant", "content": full_answer, "attachments": assistant_attachments}])
+                self.persist_assistant_reply(full_answer, attachments=assistant_attachments)
                 await self.send_event("conversation_saved", conversation=self.conversation)
                 self.run_background(
                     self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), full_answer),
@@ -675,6 +676,20 @@ class DialogSession:
             messages,
             title_hint=title_hint,
         )
+
+    def persist_assistant_reply(self, text: str, *, attachments: list[dict] | None = None, source: str = "") -> None:
+        parts = split_reply_messages(text)
+        if not parts:
+            return
+        items = []
+        for index, part in enumerate(parts):
+            item = {"role": "assistant", "content": part}
+            if source:
+                item["source"] = source
+            if attachments and index == len(parts) - 1:
+                item["attachments"] = attachments
+            items.append(item)
+        self.persist_messages(items)
 
     def build_contextual_request_messages(self, user_text: str, request_user_text: str) -> list[dict[str, str]]:
         messages = list(self.messages)
