@@ -85,6 +85,16 @@ export async function testStickerVision(payload = {}) {
   });
 }
 
+export async function bulkStickerAction(action, ids = [], options = {}) {
+  const data = await fetchJson("/api/stickers/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ids, ...(options || {}) }),
+  });
+  state.stickers = data.stickers || state.stickers || [];
+  return data;
+}
+
 export async function deleteSticker(stickerId) {
   const data = await fetchJson(`/api/stickers/${encodeURIComponent(stickerId)}`, { method: "DELETE" });
   state.stickers = data.stickers || state.stickers || [];

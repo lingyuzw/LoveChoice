@@ -715,9 +715,13 @@ async function sendImage(args) {
         rawfilemd5,
         filesize,
         aeskey: aeskey.toString("hex"),
+        no_need_thumb: false,
         thumb_rawsize: thumbRawsize,
         thumb_rawfilemd5: thumbRawfilemd5,
         thumb_filesize: thumbFilesize,
+        thumbnail_rawsize: thumbRawsize,
+        thumbnail_rawfilemd5: thumbRawfilemd5,
+        thumbnail_filesize: thumbFilesize,
       },
     }).catch((error) => {
       error.stage = "getuploadurl";
@@ -732,19 +736,30 @@ async function sendImage(args) {
       firstValue(
         uploadUrlResp.thumb_upload_full_url,
         uploadUrlResp.thumbUploadFullUrl,
+        uploadUrlResp.thumb_full_url,
+        uploadUrlResp.thumbFullUrl,
         uploadUrlResp.thumbnail_upload_full_url,
         uploadUrlResp.thumbnailUploadFullUrl,
+        uploadUrlResp.thumbnail_full_url,
+        uploadUrlResp.thumbnailFullUrl,
         nestedThumb.upload_full_url,
         nestedThumb.uploadFullUrl,
+        nestedThumb.full_url,
+        nestedThumb.fullUrl,
       ) || "",
     ).trim();
     const thumbUploadParam = firstValue(
       uploadUrlResp.thumb_upload_param,
       uploadUrlResp.thumbUploadParam,
+      uploadUrlResp.thumb_param,
+      uploadUrlResp.thumbParam,
       uploadUrlResp.thumbnail_upload_param,
       uploadUrlResp.thumbnailUploadParam,
+      uploadUrlResp.thumbnail_param,
+      uploadUrlResp.thumbnailParam,
       nestedThumb.upload_param,
       nestedThumb.uploadParam,
+      nestedThumb.param,
     );
     if (!uploadFullUrl && !uploadParam) {
       const error = new Error("getuploadurl returned no image upload URL");
@@ -786,18 +801,30 @@ async function sendImage(args) {
     const imageItem = {
       media: {
         encrypt_query_param: upload.downloadParam,
+        encrypted_query_param: upload.downloadParam,
         aes_key: aeskey.toString("base64"),
+        aeskey: aeskey.toString("base64"),
         encrypt_type: 1,
       },
+      filekey,
+      rawsize,
+      rawfilemd5,
+      filesize,
       width: stats.width,
       height: stats.height,
     };
     if (thumbUpload) {
       imageItem.thumb_media = {
         encrypt_query_param: thumbUpload.downloadParam,
+        encrypted_query_param: thumbUpload.downloadParam,
         aes_key: aeskey.toString("base64"),
+        aeskey: aeskey.toString("base64"),
         encrypt_type: 1,
       };
+      imageItem.thumb_filekey = filekey;
+      imageItem.thumb_rawsize = thumbRawsize;
+      imageItem.thumb_rawfilemd5 = thumbRawfilemd5;
+      imageItem.thumb_filesize = thumbFilesize;
     }
     await postJson({
       baseUrl,

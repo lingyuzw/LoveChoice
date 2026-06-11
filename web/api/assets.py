@@ -11,6 +11,29 @@ from media.sticker_processing import save_sticker_image
 from media.sticker_vision import StickerVisionAnalyzer
 
 
+def selected_stickers(request: Request, sticker_ids: list[str] | None, include_filtered: bool, filters: dict) -> list[dict]:
+    library = request.app.state.sticker_library
+    if sticker_ids:
+        wanted = {str(item or "").strip() for item in sticker_ids if str(item or "").strip()}
+        return [item for item in library.load() if item.get("id") in wanted]
+    if include_filtered:
+        return library.list(
+            status=str(filters.get("status") or ""),
+            emotion=str(filters.get("emotion") or ""),
+            query=str(filters.get("q") or filters.get("query") or ""),
+        )
+    return []
+
+
+async def analyze_sticker(request: Request, sticker: dict) -> dict:
+    analyzer = StickerVisionAnalyzer(request.app.state.settings)
+    analysis = await analyzer.analyze(Path(sticker.get("send_path") or sticker.get("path") or ""), mime="image/png")
+    return request.app.state.sticker_library.update(
+        sticker["id"],
+        {**analysis, "review_status": "pending", "enabled": False, "error": ""},
+    )
+
+
 def create_assets_router() -> APIRouter:
     router = APIRouter()
 
@@ -179,6 +202,65 @@ def create_assets_router() -> APIRouter:
                 "vision_model": getattr(request.app.state.settings, "sticker_vision_model", ""),
                 "vision_url": getattr(request.app.state.settings, "sticker_vision_url", ""),
             }
+
+    @router.post("/api/stickers/bulk")
+    async def bulk_sticker_action(request: Request, payload: dict | None = Body(default=None)):
+        require_local_service_control(request)
+        payload = payload or {}
+        action = str(payload.get("action") or "").strip().lower()
+        sticker_ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
+        include_filtered = bool(payload.get("include_filtered"))
+        filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+        targets = selected_stickers(request, sticker_ids, include_filtered, filters)
+        if not targets:
+            raise HTTPException(status_code=400, detail="no stickers selected")
+
+        results = []
+        if action == "reanalyze":
+            for sticker in targets[:200]:
+                try:
+                    updated = await analyze_sticker(request, sticker)
+                    results.append({"ok": True, "id": sticker.get("id"), "sticker": updated})
+                except Exception as exc:
+                    updated = None
+                    try:
+                        updated = request.app.state.sticker_library.update(
+                            str(sticker.get("id")),
+                            {"review_status": "pending", "enabled": False, "error": f"自动识别失败：{exc}"},
+                        )
+                    except Exception:
+                        pass
+                    results.append({"ok": False, "id": sticker.get("id"), "error": str(exc), "sticker": updated})
+        elif action == "approve":
+            for sticker in targets[:500]:
+                try:
+                    updated = request.app.state.sticker_library.approve(str(sticker.get("id")))
+                    results.append({"ok": True, "id": sticker.get("id"), "sticker": updated})
+                except Exception as exc:
+                    results.append({"ok": False, "id": sticker.get("id"), "error": str(exc)})
+        elif action == "delete":
+            for sticker in targets[:500]:
+                sticker_id = str(sticker.get("id") or "")
+                try:
+                    results.append({"ok": request.app.state.sticker_library.delete(sticker_id), "id": sticker_id})
+                except Exception as exc:
+                    results.append({"ok": False, "id": sticker_id, "error": str(exc)})
+        else:
+            raise HTTPException(status_code=400, detail="unsupported bulk action")
+
+        return {
+            "ok": True,
+            "action": action,
+            "count": len(results),
+            "success": sum(1 for item in results if item.get("ok")),
+            "failed": sum(1 for item in results if not item.get("ok")),
+            "results": results,
+            "stickers": request.app.state.sticker_store.list(
+                status=str(filters.get("status") or ""),
+                emotion=str(filters.get("emotion") or ""),
+                query=str(filters.get("q") or filters.get("query") or ""),
+            ),
+        }
 
     @router.post("/api/stickers/test")
     async def test_sticker(request: Request, payload: dict | None = Body(default=None)):

@@ -187,9 +187,30 @@
             <label><span>API Key</span><input id="assetStickerVisionApiKey" type="password" placeholder="留空不修改" /></label>
             <label><span>超时秒</span><input id="assetStickerVisionTimeout" type="number" min="5" max="180" step="1" /></label>
             <label><span>Max Tokens</span><input id="assetStickerVisionMaxTokens" type="number" min="128" max="4096" step="64" /></label>
-            <button class="secondary-action" id="assetStickerConfigSaveBtn" type="button"><i data-lucide="save"></i>保存识别配置</button>
+            <label><span>自动发图</span><select id="assetStickersEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
+            <label><span>活跃度</span><select id="assetStickerActivity"><option value="off">关闭</option><option value="low">低</option><option value="standard">标准</option><option value="active">活跃</option><option value="very_active">超活跃</option><option value="custom">自定义</option></select></label>
+            <label><span>冷却秒</span><input id="assetStickerCooldownSec" type="number" min="0" max="3600" step="5" /></label>
+            <label><span>每日上限</span><input id="assetStickerDailyLimit" type="number" min="0" max="300" step="1" /></label>
+            <label><span>连续上限</span><input id="assetStickerMaxStreak" type="number" min="0" max="5" step="1" /></label>
+            <label><span>自定义概率</span><input id="assetStickerCustomProbability" type="number" min="0" max="1" step="0.05" /></label>
+            <button class="secondary-action" id="assetStickerConfigSaveBtn" type="button"><i data-lucide="save"></i>保存素材配置</button>
           </section>
           <section class="asset-stats-grid" id="assetStatsGrid"></section>
+          <section class="asset-bulk-bar">
+            <div class="asset-bulk-status">
+              <strong id="assetSelectedCount">未选择</strong>
+              <small>批量识别、审核和删除会作用于当前筛选结果或选中素材。</small>
+            </div>
+            <div class="asset-bulk-actions">
+              <button class="secondary-action" id="assetSelectAllBtn" type="button"><i data-lucide="check-square"></i>全选当前</button>
+              <button class="secondary-action" id="assetBulkReanalyzeBtn" type="button"><i data-lucide="scan-eye"></i>识别选中</button>
+              <button class="secondary-action" id="assetBulkApproveBtn" type="button"><i data-lucide="badge-check"></i>通过选中</button>
+              <button class="secondary-action danger" id="assetBulkDeleteBtn" type="button"><i data-lucide="trash-2"></i>删除选中</button>
+              <button class="secondary-action" id="assetBulkReanalyzeAllBtn" type="button"><i data-lucide="sparkles"></i>识别当前筛选</button>
+              <button class="secondary-action" id="assetBulkApproveAllBtn" type="button"><i data-lucide="check-check"></i>通过当前筛选</button>
+              <button class="secondary-action danger" id="assetBulkDeleteAllBtn" type="button"><i data-lucide="trash"></i>删除当前筛选</button>
+            </div>
+          </section>
           <section class="asset-workbench">
             <aside class="asset-sidebar">
               <div class="asset-filter-card">
@@ -472,85 +493,10 @@
                     <label><span>图片入记忆</span><select id="visionMemoryExtractEnabled"><option value="false">默认不记</option><option value="true">允许准入</option></select></label>
                   </div>
                 </section>
-                <section class="dialog-feature-card compact-feature-card">
-                  <div class="appearance-card-head"><strong>素材识别 API</strong><small>表情包入库专用，不占用本地对话模型</small></div>
-                  <div class="form-grid compact">
-                    <label><span>启用</span><select id="stickerVisionEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
-                    <label><span>模型</span><input id="stickerVisionModel" type="text" placeholder="qwen-vl / gpt-4.1-mini" /></label>
-                    <label class="wide"><span>接口地址</span><input id="stickerVisionUrl" type="text" placeholder="https://.../v1/chat/completions" /></label>
-                    <label><span>API Key</span><input id="stickerVisionApiKey" type="password" placeholder="留空不修改" /></label>
-                    <label><span>超时秒</span><input id="stickerVisionTimeout" type="number" min="5" max="180" step="1" /></label>
-                    <label><span>Max Tokens</span><input id="stickerVisionMaxTokens" type="number" min="128" max="4096" step="64" /></label>
-                  </div>
-                </section>
-                <section class="dialog-feature-card sticker-asset-card">
-                  <div class="appearance-card-head"><strong>表情包素材库</strong><small>按聊天气氛自动发送，可调得更活跃</small></div>
-                  <div class="form-grid compact">
-                    <label><span>启用</span><select id="stickersEnabled"><option value="true">启用</option><option value="false">关闭</option></select></label>
-                    <label><span>活跃度</span><select id="stickerActivity"><option value="off">关闭</option><option value="low">低</option><option value="standard">标准</option><option value="active">活跃</option><option value="very_active">超活跃</option><option value="custom">自定义</option></select></label>
-                    <label><span>冷却秒</span><input id="stickerCooldownSec" type="number" min="0" max="3600" step="5" /></label>
-                    <label><span>每日上限</span><input id="stickerDailyLimit" type="number" min="0" max="300" step="1" /></label>
-                    <label><span>连续上限</span><input id="stickerMaxStreak" type="number" min="0" max="5" step="1" /></label>
-                    <label><span>自定义概率</span><input id="stickerCustomProbability" type="number" min="0" max="1" step="0.05" /></label>
-                  </div>
-                  <div class="sticker-library-panel">
-                    <div class="asset-library-head">
-                      <div>
-                        <strong>素材库</strong>
-                        <small id="stickerLibrarySummary">按标签管理，后续可扩展角色素材包</small>
-                      </div>
-                    </div>
-                    <div class="sticker-upload-row">
-                      <input class="visually-hidden" id="stickerFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple title="可按 Ctrl/Shift 多选 PNG、JPG、WebP" />
-                      <input id="stickerTagInput" type="text" placeholder="标签：开心 / 安慰 / 无语" />
-                      <select id="stickerChannelInput">
-                        <option value="all">Web + 微信</option>
-                        <option value="web">仅 Web</option>
-                        <option value="weixin">仅微信</option>
-                      </select>
-                      <button class="secondary-action" id="stickerUploadBtn" type="button" title="可一次选择多张 PNG、JPG、WebP"><i data-lucide="image-plus"></i>批量上传</button>
-                    </div>
-                    <div class="sticker-review-toolbar">
-                      <select id="stickerStatusFilter">
-                        <option value="">全部状态</option>
-                        <option value="pending">待审核</option>
-                        <option value="approved">已通过</option>
-                        <option value="failed">失败</option>
-                        <option value="disabled">已禁用</option>
-                      </select>
-                      <select id="stickerEmotionFilter">
-                        <option value="">全部分类</option>
-                        <option value="laugh">laugh</option>
-                        <option value="smug">smug</option>
-                        <option value="angry">angry</option>
-                        <option value="sad">sad</option>
-                        <option value="comfort">comfort</option>
-                        <option value="confused">confused</option>
-                        <option value="shock">shock</option>
-                        <option value="sleepy">sleepy</option>
-                        <option value="cute">cute</option>
-                        <option value="bye">bye</option>
-                        <option value="silent">silent</option>
-                        <option value="agree">agree</option>
-                        <option value="reject">reject</option>
-                      </select>
-                      <input id="stickerSearchInput" type="text" placeholder="搜索标签 / OCR / 场景" />
-                      <button class="secondary-action" id="stickerRefreshBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
-                    </div>
-                    <div class="sticker-test-panel">
-                      <div class="sticker-test-row">
-                        <input id="stickerTestInput" type="text" placeholder="测试一句话，比如：哈哈哈哈 / 无语了 / 有点难过" />
-                        <select id="stickerTestChannel">
-                          <option value="web">Web</option>
-                          <option value="weixin">微信</option>
-                        </select>
-                        <button class="secondary-action" id="stickerTestBtn" type="button"><i data-lucide="sparkles"></i>测试表情</button>
-                      </div>
-                      <div class="sticker-test-result" id="stickerTestResult">输入一句话后，可以模拟当前策略会不会发表情包。</div>
-                    </div>
-                    <div class="sticker-library-list" id="stickerLibraryList"></div>
-                    <div class="sticker-review-editor" id="stickerReviewEditor">选择一张表情包后，可以审核、修改分类和标签。</div>
-                  </div>
+                <section class="dialog-feature-card compact-feature-card asset-jump-card">
+                  <div class="appearance-card-head"><strong>素材库</strong><small>表情包识别、审核、策略和微信发送测试已迁移到独立页面</small></div>
+                  <p class="muted-copy">配置页只保留通用对话能力。素材相关的批量上传、批量识别、一键通过和删除都在素材库统一处理。</p>
+                  <button class="primary-action" data-nav="assets" type="button"><i data-lucide="library"></i>打开素材库</button>
                 </section>
                 <section class="dialog-feature-card wide">
                   <div class="appearance-card-head"><strong>上下文压缩</strong><small>聊久后保留摘要和最近对话，减少遗忘与延迟</small></div>

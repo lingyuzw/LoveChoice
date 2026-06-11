@@ -16,7 +16,6 @@ import {
   loadProactiveEvents,
   loadReminders,
   loadServices,
-  loadStickers,
   loadToolConfig,
   listModelFiles,
   resolveTool,
@@ -28,12 +27,6 @@ import {
   updateBotProfile,
   updateServiceConfig,
   uploadAvatar,
-  uploadStickerBatch,
-  testSticker,
-  updateSticker,
-  approveSticker,
-  reanalyzeSticker,
-  deleteSticker,
 } from "../../api/index.js";
 
 /* ---- init ---- */
@@ -93,7 +86,7 @@ export async function initSettings() {
   });
 
   const configResult = await loadConfig();
-  await Promise.allSettled([loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders(), loadStickers()]);
+  await Promise.allSettled([loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders()]);
   syncToolProviderDraft();
   fillConfig(configResult.config);
   renderToolProviders();
@@ -108,7 +101,6 @@ export async function initSettings() {
   renderProfileList();
   syncModelFileInput();
   renderBotProfiles();
-  renderStickerLibrary();
   setText("topStatus", configResult.ok ? "后端在线" : "静态预览");
 }
 
@@ -138,16 +130,6 @@ function setupSettingsEvents() {
   $("#proactiveTestBtn")?.addEventListener("click", runProactiveTest);
   $("#createReminderBtn")?.addEventListener("click", handleCreateReminder);
   $("#addBotProfileBtn")?.addEventListener("click", addBotProfile);
-  $("#stickerUploadBtn")?.addEventListener("click", () => $("#stickerFileInput")?.click());
-  $("#stickerFileInput")?.addEventListener("change", handleStickerUpload);
-  $("#stickerTestBtn")?.addEventListener("click", runStickerTest);
-  $("#stickerRefreshBtn")?.addEventListener("click", refreshStickerLibrary);
-  $("#stickerStatusFilter")?.addEventListener("change", refreshStickerLibrary);
-  $("#stickerEmotionFilter")?.addEventListener("change", refreshStickerLibrary);
-  $("#stickerSearchInput")?.addEventListener("input", () => {
-    window.clearTimeout(state.stickerSearchTimer);
-    state.stickerSearchTimer = window.setTimeout(refreshStickerLibrary, 220);
-  });
   $("#openModelFilePickerBtn")?.addEventListener("click", openModelFilePicker);
   $("#modelFileRefreshBtn")?.addEventListener("click", refreshModelFilePicker);
   $("#modelFileCancelBtn")?.addEventListener("click", closeModelFilePicker);
@@ -287,15 +269,13 @@ function refreshSettingsOverview() {
   const turns = mode === "API" ? value("apiHistoryTurns", 8) : value("historyTurns", 8);
   setText("engineSummary", `${mode} · ${model || "未命名模型"} · ${turns} 轮`);
   setText("toolsSummary", `${value("toolsEnabled", "true") === "true" ? "已启用" : "已关闭"} · ${Object.keys(toolProviderDraft || {}).filter((key) => (toolProviderDraft[key] || {}).enabled !== false).length} 项`);
-  setText("dialogFeaturesSummary", `${value("visionEnabled", "true") === "true" ? "图片开" : "图片关"} · 表情 ${value("stickerActivity", "active")} · 压缩 ${value("contextCompactionEnabled", "true") === "true" ? "开" : "关"}`);
+  setText("dialogFeaturesSummary", `${value("visionEnabled", "true") === "true" ? "图片开" : "图片关"} · 素材库独立页 · 压缩 ${value("contextCompactionEnabled", "true") === "true" ? "开" : "关"}`);
   setText("proactiveSummary", `${value("proactiveEnabled", "false") === "true" ? "已开启" : "已关闭"} · ${value("followupLevel", "restrained")}`);
   setText("botProfileSummary", `${(state.botProfiles || []).length || 1} 个 Profile`);
   setText("promptSummary", `${(value("systemPrompt", "") || "").length} 字`);
   setText("ttsSummary", `${value("ttsSpeed", 1)}x · ${value("ttsSampleRate", 24000)}Hz`);
   setText("vadSummary", `阈值 ${value("vadThreshold", 0.5)} · 静音 ${value("vadMinSilence", 500)}ms`);
   setText("commandsSummary", `${(state.services || []).length} 个服务`);
-  const stickerCount = (state.stickers || []).length;
-  setText("stickerLibrarySummary", `${stickerCount} 个素材 · 按标签管理，后续可扩展角色素材包`);
 }
 
 function syncDialogModeUi() {
@@ -355,18 +335,6 @@ const CONFIG_FIELD_MAP = [
   { key: "vision_timeout", id: "visionTimeout" },
   { key: "vision_max_image_mb", id: "visionMaxImageMb" },
   { key: "vision_memory_extract_enabled", id: "visionMemoryExtractEnabled" },
-  { key: "sticker_vision_enabled", id: "stickerVisionEnabled" },
-  { key: "sticker_vision_url", id: "stickerVisionUrl" },
-  { key: "sticker_vision_model", id: "stickerVisionModel" },
-  { key: "sticker_vision_api_key", id: "stickerVisionApiKey", secret: true },
-  { key: "sticker_vision_timeout", id: "stickerVisionTimeout" },
-  { key: "sticker_vision_max_tokens", id: "stickerVisionMaxTokens" },
-  { key: "stickers_enabled", id: "stickersEnabled" },
-  { key: "sticker_activity", id: "stickerActivity" },
-  { key: "sticker_cooldown_sec", id: "stickerCooldownSec" },
-  { key: "sticker_daily_limit", id: "stickerDailyLimit" },
-  { key: "sticker_max_streak", id: "stickerMaxStreak" },
-  { key: "sticker_custom_probability", id: "stickerCustomProbability" },
   { key: "context_compaction_enabled", id: "contextCompactionEnabled" },
   { key: "context_window_tokens", id: "contextWindowTokens" },
   { key: "context_compaction_ratio", id: "contextCompactionRatio" },
@@ -389,7 +357,7 @@ const CONFIG_FIELD_MAP = [
   { key: "tools_max_result_chars", id: "toolsMaxResultChars" },
 ];
 
-const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "api_temperature", "api_max_tokens", "api_history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars", "vision_timeout", "vision_max_image_mb", "sticker_vision_timeout", "sticker_vision_max_tokens", "sticker_cooldown_sec", "sticker_daily_limit", "sticker_max_streak", "sticker_custom_probability", "context_window_tokens", "context_compaction_ratio", "context_keep_recent_turns", "context_summary_max_chars", "context_summary_max_layers"]);
+const NUM_FIELDS = new Set(["temperature", "max_tokens", "history_turns", "api_temperature", "api_max_tokens", "api_history_turns", "ui_font_scale", "tts_speed", "tts_seed", "tts_volume", "tts_fade_ms", "tts_sample_rate", "vad_threshold", "vad_min_silence_ms", "vad_speech_pad_ms", "pre_speech_ms", "min_utterance_ms", "max_utterance_sec", "tools_timeout", "tools_max_result_chars", "vision_timeout", "vision_max_image_mb", "context_window_tokens", "context_compaction_ratio", "context_keep_recent_turns", "context_summary_max_chars", "context_summary_max_layers"]);
 const BOOL_FIELDS = new Set(["thinking_enabled"]);
 
 function fillConfig(config) {
@@ -1161,265 +1129,6 @@ function isChecked(id) {
   return Boolean(document.getElementById(id)?.checked);
 }
 
-/* ---- sticker library ---- */
-
-async function refreshStickerLibrary() {
-  await loadStickers({
-    status: value("stickerStatusFilter", ""),
-    emotion: value("stickerEmotionFilter", ""),
-    q: value("stickerSearchInput", "").trim(),
-  });
-  renderStickerLibrary();
-  refreshSettingsOverview();
-}
-
-function renderStickerLibrary() {
-  const host = $("#stickerLibraryList");
-  if (!host) return;
-  host.replaceChildren();
-  const stickers = state.stickers || [];
-  if (!stickers.length) {
-    const empty = document.createElement("div");
-    empty.className = "sticker-library-empty";
-    empty.textContent = "\u6682\u65e0\u8868\u60c5\u5305\u3002\u4e0a\u4f20\u540e\u4f1a\u8fdb\u5165\u5f85\u5ba1\u6838\uff0c\u5ba1\u6838\u901a\u8fc7\u540e\u624d\u4f1a\u53d1\u9001\u3002";
-    host.appendChild(empty);
-    renderStickerEditor(null);
-    return;
-  }
-  for (const sticker of stickers.slice(0, 80)) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `sticker-library-item review-${sticker.review_status || "pending"}`;
-    const img = document.createElement("img");
-    img.src = sticker.thumbnail || sticker.url || sticker.file || sticker.send_file;
-    img.alt = sticker.caption || sticker.tag || sticker.name || "\u8868\u60c5\u5305";
-    const meta = document.createElement("span");
-    meta.textContent = `${sticker.emotion || sticker.tag || "\u9ed8\u8ba4"} · ${sticker.review_status || "pending"} · ${stickerChannelsLabel(sticker.channels)}`;
-    const count = document.createElement("small");
-    count.textContent = `${sticker.use_count || 0} \u6b21 · \u5f3a\u5ea6 ${sticker.intensity || 3}`;
-    item.append(img, meta, count);
-    item.addEventListener("click", () => renderStickerEditor(sticker));
-    host.appendChild(item);
-  }
-  renderIcons();
-}
-
-async function handleStickerUpload(event) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-  const uploadButton = $("#stickerUploadBtn");
-  try {
-    const validFiles = files.filter((file) => {
-      const type = String(file.type || "").toLowerCase();
-      const name = String(file.name || "").toLowerCase();
-      return ["image/png", "image/jpeg", "image/webp"].includes(type) && !name.endsWith(".gif");
-    });
-    if (!validFiles.length) {
-      showToast("\u7b2c\u4e00\u7248\u6682\u4e0d\u652f\u6301 GIF\uff0c\u8bf7\u4e0a\u4f20 PNG/JPG/WebP", "error");
-      return;
-    }
-    if (validFiles.length !== files.length) {
-      showToast("\u5df2\u8df3\u8fc7\u4e0d\u652f\u6301\u7684\u56fe\u7247\u683c\u5f0f", "info");
-    }
-    const payload = [];
-    for (const file of validFiles.slice(0, 80)) {
-      payload.push({ name: file.name, data_url: await fileToDataUrl(file) });
-    }
-    if (uploadButton) {
-      uploadButton.disabled = true;
-      uploadButton.textContent = `\u6b63\u5728\u5165\u5e93 ${payload.length} \u5f20...`;
-    }
-    const channels = value("stickerChannelInput", "all") || "all";
-    const result = await uploadStickerBatch(payload, channels);
-    const okCount = (result.results || []).filter((item) => item.ok).length;
-    const pendingCount = (result.results || []).filter((item) => item.ok && item.analyzed === false && !item.duplicate).length;
-    const duplicateCount = (result.results || []).filter((item) => item.ok && item.duplicate).length;
-    const failCount = (result.results || []).filter((item) => !item.ok).length;
-    await refreshStickerLibrary();
-    const pendingText = pendingCount ? `，${pendingCount} 张待重新识别` : "";
-    const duplicateText = duplicateCount ? `，${duplicateCount} 张重复` : "";
-    showToast(`表情包入库完成：${okCount} 张${pendingText}${duplicateText}，失败 ${failCount} 张`, (failCount || pendingCount) ? "info" : "success");
-  } catch (error) {
-    showToast(`\u8868\u60c5\u5305\u4e0a\u4f20\u5931\u8d25\uff1a${error.message}`, "error");
-  } finally {
-    if (uploadButton) {
-      uploadButton.disabled = false;
-      uploadButton.innerHTML = `<i data-lucide="image-plus"></i>\u6279\u91cf\u4e0a\u4f20`;
-      renderIcons();
-    }
-    event.target.value = "";
-  }
-}
-
-function renderStickerEditor(sticker) {
-  const host = $("#stickerReviewEditor");
-  if (!host) return;
-  host.replaceChildren();
-  if (!sticker) {
-    host.textContent = "\u9009\u62e9\u5de6\u4fa7\u8868\u60c5\u5305\u540e\uff0c\u5728\u8fd9\u91cc\u4fee\u6539\u5206\u7c7b\u3001\u6807\u7b7e\u548c\u53d1\u9001\u573a\u666f\u3002";
-    return;
-  }
-  host.className = "sticker-review-editor active";
-  const preview = document.createElement("img");
-  preview.src = sticker.thumbnail || sticker.url || sticker.file || sticker.send_file;
-  preview.alt = sticker.caption || sticker.name || "\u8868\u60c5\u5305";
-  const form = document.createElement("div");
-  form.className = "sticker-editor-form";
-  form.innerHTML = `
-    <label><span>\u540d\u79f0</span><input data-sticker-field="name" value="${escapeAttr(sticker.name || "")}" /></label>
-    <label><span>\u4e3b\u5206\u7c7b</span><input data-sticker-field="emotion" value="${escapeAttr(sticker.emotion || "laugh")}" /></label>
-    <label><span>\u6807\u7b7e</span><input data-sticker-field="tags" value="${escapeAttr((sticker.tags || []).join("\uff0c"))}" /></label>
-    <label><span>\u9002\u7528\u573a\u666f</span><input data-sticker-field="scene" value="${escapeAttr((sticker.scene || []).join("\uff0c"))}" /></label>
-    <label><span>\u7981\u7528\u573a\u666f</span><input data-sticker-field="avoid" value="${escapeAttr((sticker.avoid || []).join("\uff0c"))}" /></label>
-    <label><span>\u5f3a\u5ea6</span><input data-sticker-field="intensity" type="number" min="1" max="5" value="${Number(sticker.intensity || 3)}" /></label>
-    <label class="wide"><span>\u8bf4\u660e</span><textarea data-sticker-field="caption">${escapeHtml(sticker.caption || "")}</textarea></label>
-    <label class="wide"><span>OCR</span><textarea data-sticker-field="ocr_text">${escapeHtml(sticker.ocr_text || "")}</textarea></label>
-    <label><span>\u6e20\u9053</span><select data-sticker-field="channels"><option value="all">Web + \u5fae\u4fe1</option><option value="web">\u4ec5 Web</option><option value="weixin">\u4ec5\u5fae\u4fe1</option></select></label>
-    <label><span>\u72b6\u6001</span><select data-sticker-field="review_status"><option value="pending">\u5f85\u5ba1\u6838</option><option value="approved">\u5df2\u901a\u8fc7</option><option value="failed">\u5931\u8d25</option><option value="disabled">\u5df2\u505c\u7528</option></select></label>
-  `;
-  form.querySelector('[data-sticker-field="channels"]').value = stickerChannelValue(sticker.channels);
-  form.querySelector('[data-sticker-field="review_status"]').value = sticker.review_status || "pending";
-  const actions = document.createElement("div");
-  actions.className = "inline-actions sticker-editor-actions";
-  const save = document.createElement("button");
-  save.type = "button";
-  save.className = "secondary-action";
-  save.append(createIcon("save"), document.createTextNode("\u4fdd\u5b58"));
-  save.addEventListener("click", () => saveStickerEditor(sticker.id, form));
-  const approve = document.createElement("button");
-  approve.type = "button";
-  approve.className = "primary-action";
-  approve.append(createIcon("check"), document.createTextNode("\u901a\u8fc7\u5ba1\u6838"));
-  approve.addEventListener("click", () => approveStickerAndRefresh(sticker.id));
-  const reanalyze = document.createElement("button");
-  reanalyze.type = "button";
-  reanalyze.className = "secondary-action";
-  reanalyze.append(createIcon("sparkles"), document.createTextNode("\u91cd\u65b0\u8bc6\u522b"));
-  reanalyze.addEventListener("click", () => reanalyzeStickerAndRefresh(sticker.id));
-  const del = document.createElement("button");
-  del.type = "button";
-  del.className = "secondary-action danger";
-  del.append(createIcon("trash-2"), document.createTextNode("\u5220\u9664"));
-  del.addEventListener("click", async () => {
-    await deleteSticker(sticker.id);
-    await refreshStickerLibrary();
-  });
-  actions.append(save, approve, reanalyze, del);
-  host.append(preview, form, actions);
-  renderIcons();
-}
-
-async function runStickerTest() {
-  const text = value("stickerTestInput", "").trim();
-  const channel = value("stickerTestChannel", "web");
-  const host = $("#stickerTestResult");
-  if (!text) {
-    showToast("\u8bf7\u5148\u8f93\u5165\u4e00\u53e5\u6d4b\u8bd5\u6587\u672c", "error");
-    return;
-  }
-  if (host) {
-    host.classList.remove("hit");
-    host.textContent = "\u6b63\u5728\u6a21\u62df\u8868\u60c5\u5305\u7b56\u7565...";
-  }
-  try {
-    const result = await testSticker(text, channel);
-    renderStickerTestResult(result);
-  } catch (error) {
-    if (host) {
-      host.classList.remove("hit");
-      host.textContent = `\u6d4b\u8bd5\u5931\u8d25\uff1a${error.message}`;
-    }
-  }
-}
-
-function renderStickerTestResult(result) {
-  const host = $("#stickerTestResult");
-  if (!host) return;
-  host.replaceChildren();
-  const intent = result.intent || {};
-  const sticker = result.sticker || null;
-  host.classList.toggle("hit", Boolean(sticker));
-  const title = document.createElement("strong");
-  title.textContent = sticker ? "\u547d\u4e2d\u8868\u60c5\u5305" : "\u672a\u547d\u4e2d\u8868\u60c5\u5305";
-  const detail = document.createElement("span");
-  detail.textContent = sticker
-    ? `\u6e20\u9053 ${result.channel || "web"} · \u5206\u7c7b ${intent.tag || sticker.tag || sticker.emotion || "\u9ed8\u8ba4"} · ${stickerReasonLabel(intent.reason)}`
-    : `\u6e20\u9053 ${result.channel || "web"} · ${stickerReasonLabel(intent.reason)} · \u7d20\u6750 ${result.stickers_count || 0}`;
-  host.append(title, detail);
-  const imageUrl = sticker?.thumbnail || sticker?.url || sticker?.file || sticker?.send_file;
-  if (imageUrl) {
-    const img = document.createElement("img");
-    img.src = imageUrl;
-    img.alt = sticker.name || sticker.caption || "\u8868\u60c5\u5305";
-    host.appendChild(img);
-  }
-}
-
-function stickerChannelValue(channels) {
-  const values = Array.isArray(channels) ? channels : ["all", "web", "weixin"];
-  if (values.includes("all") || (values.includes("web") && values.includes("weixin"))) return "all";
-  if (values.includes("weixin")) return "weixin";
-  return "web";
-}
-
-async function saveStickerEditor(stickerId, form) {
-  const field = (name) => form.querySelector(`[data-sticker-field="${name}"]`)?.value || "";
-  const patch = {
-    name: field("name"),
-    emotion: field("emotion"),
-    tags: splitEditorList(field("tags")),
-    scene: splitEditorList(field("scene")),
-    avoid: splitEditorList(field("avoid")),
-    intensity: Number(field("intensity") || 3),
-    caption: field("caption"),
-    ocr_text: field("ocr_text"),
-    channels: field("channels"),
-    review_status: field("review_status"),
-    enabled: field("review_status") === "approved",
-  };
-  await updateSticker(stickerId, patch);
-  await refreshStickerLibrary();
-  showToast("\u8868\u60c5\u5305\u5df2\u4fdd\u5b58", "success");
-}
-
-async function approveStickerAndRefresh(stickerId) {
-  await approveSticker(stickerId);
-  await refreshStickerLibrary();
-  showToast("\u5df2\u901a\u8fc7\u5ba1\u6838", "success");
-}
-
-async function reanalyzeStickerAndRefresh(stickerId) {
-  showToast("\u6b63\u5728\u91cd\u65b0\u8bc6\u522b...", "info");
-  await reanalyzeSticker(stickerId);
-  await refreshStickerLibrary();
-  showToast("\u91cd\u65b0\u8bc6\u522b\u5b8c\u6210", "success");
-}
-
-function splitEditorList(text) {
-  return String(text || "").split(/[,，/、\s]+/).map((item) => item.trim()).filter(Boolean).slice(0, 10);
-}
-
-function stickerChannelsLabel(channels) {
-  const values = Array.isArray(channels) ? channels : ["all", "web", "weixin"];
-  if (values.includes("all") || (values.includes("web") && values.includes("weixin"))) return "Web+\u5fae\u4fe1";
-  if (values.includes("weixin")) return "\u5fae\u4fe1";
-  return "Web";
-}
-
-function stickerReasonLabel(reason) {
-  return {
-    disabled: "\u672a\u542f\u7528",
-    off: "\u7b56\u7565\u5173\u95ed",
-    serious_or_tool: "\u4e25\u8083/\u5de5\u5177\u56de\u7b54\u4e0d\u53d1",
-    daily_limit: "\u8fbe\u5230\u6bcf\u65e5\u4e0a\u9650",
-    cooldown: "\u51b7\u5374\u4e2d",
-    streak: "\u8fde\u7eed\u53d1\u9001\u8fc7\u591a",
-    probability: "\u6982\u7387\u672a\u547d\u4e2d",
-    matched: "\u7b26\u5408\u53d1\u9001\u89c4\u5219",
-    no_channel_sticker: "\u6ca1\u6709\u53ef\u7528\u8868\u60c5\u5305",
-  }[reason] || reason || "\u672a\u77e5";
-}
-
 function renderBotProfiles() {
   const host = $("#botProfileList");
   if (!host) return;
@@ -1511,14 +1220,13 @@ async function saveSettingsPage(options = {}) {
     await saveProactiveConfig(collectProactiveConfig());
     await saveBotProfiles();
     for (const s of state.services) { await updateServiceConfig(s.id, collectProfileConfig(s.id)); }
-    await Promise.allSettled([loadConfig(), loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders(), loadStickers()]);
+    await Promise.allSettled([loadConfig(), loadToolConfig(), loadBotProfiles(), loadProactiveConfig(), loadProactiveEvents(), loadReminders()]);
     syncToolProviderDraft();
     fillConfig(state.currentConfig);
     renderToolProviders();
     fillProactiveConfig();
     renderProactiveEvents();
     renderReminders();
-    renderStickerLibrary();
     await loadServices(); renderProfileList(); syncModelFileInput();
     renderBotProfiles();
     refreshSettingsOverview();
