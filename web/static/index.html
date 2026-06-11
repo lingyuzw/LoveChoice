@@ -443,7 +443,7 @@
                       </div>
                     </div>
                     <div class="sticker-upload-row">
-                      <input class="visually-hidden" id="stickerFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                      <input class="visually-hidden" id="stickerFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
                       <input id="stickerTagInput" type="text" placeholder="标签：开心 / 安慰 / 无语" />
                       <select id="stickerChannelInput">
                         <option value="all">Web + 微信</option>
@@ -451,6 +451,33 @@
                         <option value="weixin">仅微信</option>
                       </select>
                       <button class="secondary-action" id="stickerUploadBtn" type="button"><i data-lucide="image-plus"></i>上传表情包</button>
+                    </div>
+                    <div class="sticker-review-toolbar">
+                      <select id="stickerStatusFilter">
+                        <option value="">全部状态</option>
+                        <option value="pending">待审核</option>
+                        <option value="approved">已通过</option>
+                        <option value="failed">失败</option>
+                        <option value="disabled">已禁用</option>
+                      </select>
+                      <select id="stickerEmotionFilter">
+                        <option value="">全部分类</option>
+                        <option value="laugh">laugh</option>
+                        <option value="smug">smug</option>
+                        <option value="angry">angry</option>
+                        <option value="sad">sad</option>
+                        <option value="comfort">comfort</option>
+                        <option value="confused">confused</option>
+                        <option value="shock">shock</option>
+                        <option value="sleepy">sleepy</option>
+                        <option value="cute">cute</option>
+                        <option value="bye">bye</option>
+                        <option value="silent">silent</option>
+                        <option value="agree">agree</option>
+                        <option value="reject">reject</option>
+                      </select>
+                      <input id="stickerSearchInput" type="text" placeholder="搜索标签 / OCR / 场景" />
+                      <button class="secondary-action" id="stickerRefreshBtn" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
                     </div>
                     <div class="sticker-test-panel">
                       <div class="sticker-test-row">
@@ -464,6 +491,7 @@
                       <div class="sticker-test-result" id="stickerTestResult">输入一句话后，可以模拟当前策略会不会发表情包。</div>
                     </div>
                     <div class="sticker-library-list" id="stickerLibraryList"></div>
+                    <div class="sticker-review-editor" id="stickerReviewEditor">选择一张表情包后，可以审核、修改分类和标签。</div>
                   </div>
                 </section>
                 <section class="dialog-feature-card wide">

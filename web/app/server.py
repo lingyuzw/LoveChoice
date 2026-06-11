@@ -49,6 +49,12 @@ from domain.paths import (
     SETTINGS_CONFIG,
     STATIC_DIR,
     STICKER_DIR,
+    STICKER_LIBRARY_DIR,
+    STICKER_LIBRARY_INDEX,
+    STICKER_ORIGINALS_DIR,
+    STICKER_PROCESSED_DIR,
+    STICKER_SEND_DIR,
+    STICKER_THUMBNAIL_DIR,
     STICKERS_CONFIG,
     TOOL_PROVIDERS_CONFIG,
     TOOLS_CONFIG,
@@ -68,6 +74,7 @@ from data.conversations import ConversationStore
 from dialog.session import DialogSession
 from integration_runtime.manager import ExternalDialogEngine, IntegrationManager
 from media.assets import ChatImageStore, StickerStore
+from media.sticker_library import StickerLibrary
 from data.profiles import BotProfileStore
 from engagement.proactive import FollowupPolicy, ProactiveStore
 from engagement.reminders import ReminderStore
@@ -425,7 +432,14 @@ def create_app(args) -> FastAPI:
     app.state.bot_profiles = BotProfileStore(BOT_PROFILES_CONFIG, app.state.settings.system)
     app.state.avatar_store = AvatarStore(AVATAR_DIR)
     app.state.chat_image_store = ChatImageStore(CHAT_IMAGE_DIR)
-    app.state.sticker_store = StickerStore(STICKER_DIR, STICKERS_CONFIG)
+    app.state.sticker_library = StickerLibrary(
+        index_path=STICKER_LIBRARY_INDEX,
+        original_dir=STICKER_ORIGINALS_DIR,
+        processed_dir=STICKER_PROCESSED_DIR,
+        send_dir=STICKER_SEND_DIR,
+        thumbnail_dir=STICKER_THUMBNAIL_DIR,
+    )
+    app.state.sticker_store = StickerStore(STICKER_DIR, STICKERS_CONFIG, library=app.state.sticker_library)
     app.state.sticker_policy = StickerPolicy()
     app.state.reminder_store = ReminderStore(REMINDERS_DB)
     app.state.proactive_store = ProactiveStore(PROACTIVE_CONFIG, PROACTIVE_DB)
@@ -448,6 +462,7 @@ def create_app(args) -> FastAPI:
     app.state.integration_watchdog_task = None
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.mount("/runtime/uploads", StaticFiles(directory=UPLOAD_DIR), name="runtime_uploads")
+    app.mount("/runtime/stickers", StaticFiles(directory=STICKER_LIBRARY_DIR), name="runtime_stickers")
     app.include_router(create_config_router())
     app.include_router(create_profiles_router())
     app.include_router(create_assets_router())

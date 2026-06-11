@@ -86,15 +86,18 @@ class ChatImageStore:
 
 
 class StickerStore:
-    def __init__(self, root: Path, index_path: Path):
+    def __init__(self, root: Path, index_path: Path, library: Any | None = None):
         self.root = root
         self.index_path = index_path
+        self.library = library
         self.root.mkdir(parents=True, exist_ok=True)
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        if not self.index_path.exists():
+        if self.library is None and not self.index_path.exists():
             self.save([])
 
-    def list(self) -> list[dict]:
+    def list(self, *, status: str = "", emotion: str = "", query: str = "") -> list[dict]:
+        if self.library is not None:
+            return self.library.list(status=status, emotion=emotion, query=query)
         try:
             data = json.loads(self.index_path.read_text(encoding="utf-8"))
             if not isinstance(data, list):
@@ -104,9 +107,14 @@ class StickerStore:
         return [self.normalize(item) for item in data if isinstance(item, dict)]
 
     def save(self, items: list[dict]) -> None:
+        if self.library is not None:
+            self.library.save(items)
+            return
         self.index_path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def add_data_url(self, data_url: str, tag: str = "默认", name: str = "", channels: str | list[str] = "all") -> dict:
+        if self.library is not None:
+            return self.library.add_upload(data_url=data_url, name=name or tag, channels=channels)
         mime, raw = parse_data_url(data_url)
         if len(raw) > 8 * 1024 * 1024:
             raise ValueError("表情包不能超过 8 MB")
@@ -133,6 +141,8 @@ class StickerStore:
         return item
 
     def delete(self, sticker_id: str) -> bool:
+        if self.library is not None:
+            return self.library.delete(sticker_id)
         items = self.list()
         target = next((item for item in items if item["id"] == sticker_id), None)
         if not target:
@@ -145,6 +155,8 @@ class StickerStore:
         return True
 
     def mark_used(self, sticker_id: str) -> dict | None:
+        if self.library is not None:
+            return self.library.mark_used(sticker_id)
         items = self.list()
         found = None
         for item in items:
@@ -158,6 +170,8 @@ class StickerStore:
         return found
 
     def mark_used_many(self, sticker_ids: list[str]) -> list[dict]:
+        if self.library is not None:
+            return self.library.mark_used_many(sticker_ids)
         wanted = {str(item or "") for item in sticker_ids if str(item or "").strip()}
         if not wanted:
             return []
@@ -173,6 +187,8 @@ class StickerStore:
         return changed
 
     def choose(self, tag: str = "", avoid_id: str = "", channel: str = "web") -> dict | None:
+        if self.library is not None:
+            return self.library.choose(tag, avoid_id=avoid_id, channel=channel)
         channel = normalize_channel(channel)
         items = [
             item

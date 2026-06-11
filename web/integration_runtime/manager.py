@@ -1136,6 +1136,17 @@ class ExternalDialogEngine:
         self.sticker_policy = sticker_policy
         self.media_dir.mkdir(parents=True, exist_ok=True)
 
+    def run_background(self, platform_id: str, trace_id: str, coro, label: str) -> None:
+        task = asyncio.create_task(coro)
+
+        def _log_failure(done: asyncio.Task) -> None:
+            with contextlib.suppress(asyncio.CancelledError):
+                exc = done.exception()
+                if exc:
+                    self.integration_manager.append_log(platform_id, f"[dialog:{trace_id}] {label} background failed: {exc}")
+
+        task.add_done_callback(_log_failure)
+
     async def handle(self, payload: dict, settings: SessionSettings) -> dict:
         platform_id = safe_id(str(payload.get("platform_id") or payload.get("integration_id") or "weixin_personal"))
         session_id = str(payload.get("session_id") or payload.get("sender_id") or "default")
@@ -1169,7 +1180,7 @@ class ExternalDialogEngine:
 
         trace_id = f"ext_{uuid.uuid4().hex[:10]}"
         started_at = time.perf_counter()
-        timings = {"receive_ms": 0, "tool_ms": 0, "llm_ms": 0, "tts_ms": 0, "send_ms": 0, "total_ms": 0}
+        timings = {"receive_ms": 0, "tool_ms": 0, "llm_ms": 0, "tts_ms": 0, "memory_ms": 0, "send_ms": 0, "total_ms": 0}
         self.integration_manager.append_log(platform_id, f"[dialog:{trace_id}] recv sender={sender_id} text={compact_text(text, 220)}")
         voice_requested = self.should_send_voice(text, keywords, integration)
         reply_text, tool_result, direct_answer, tool_ms, llm_ms, reply_diag = await self.reply_text(runtime_settings, conversation, text, voice_requested=voice_requested)
@@ -1202,7 +1213,7 @@ class ExternalDialogEngine:
             )
         self.conversation_store.append_messages(conversation["id"], messages_to_store, title_hint=text)
         if reply_text.strip():
-            await self.remember_turn(runtime_settings, text, reply_text)
+            self.run_background(platform_id, trace_id, self.remember_turn(runtime_settings, text, reply_text), "memory")
 
         send_voice = voice_requested
         voice_file = ""
@@ -1284,7 +1295,9 @@ class ExternalDialogEngine:
                 "type": "sticker",
                 "asset_id": sticker["id"],
                 "url": sticker["url"],
-                "path": sticker.get("path") or "",
+                "path": sticker.get("send_path") or sticker.get("path") or "",
+                "send_path": sticker.get("send_path") or "",
+                "send_file": sticker.get("send_file") or "",
                 "mime": sticker.get("mime") or "image/png",
                 "tag": sticker.get("tag") or "",
                 "pending_mark_used": True,
@@ -1438,6 +1451,7 @@ class ExternalDialogEngine:
                 "tag": sticker.get("tag"),
                 "mime": sticker.get("mime"),
                 "url": sticker.get("url"),
+                "send_file": sticker.get("send_file") or "",
             },
         }
         self.integration_manager.append_log(
@@ -1450,7 +1464,7 @@ class ExternalDialogEngine:
                 base_url=target["base_url"],
                 token=target["token"],
                 to_user_id=target["sender_id"],
-                image_file=str(sticker.get("path") or ""),
+                image_file=str(sticker.get("send_path") or sticker.get("path") or ""),
                 context_token=target["context_token"],
                 cdn_base_url=str(target.get("cdn_base_url") or DEFAULT_WEIXIN_CDN_BASE_URL),
             )

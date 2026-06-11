@@ -301,6 +301,17 @@ class DialogSession:
 
         self.current_task.add_done_callback(_clear_task)
 
+    def run_background(self, coro, label: str) -> None:
+        task = asyncio.create_task(coro)
+
+        def _log_failure(done: asyncio.Task) -> None:
+            with contextlib.suppress(asyncio.CancelledError):
+                exc = done.exception()
+                if exc:
+                    self.trace_log(self.current_trace_id, f"{label}:background_error {exc}")
+
+        task.add_done_callback(_log_failure)
+
     async def interrupt_current_turn(self, notify: bool = True) -> None:
         task = self.current_task
         if task and not task.done():
@@ -420,8 +431,11 @@ class DialogSession:
                         await self.send_event("assistant_attachment", attachments=assistant_attachments)
                     self.persist_messages([{"role": "assistant", "content": direct_answer, "attachments": assistant_attachments}])
                     await self.send_event("conversation_saved", conversation=self.conversation)
-                    await self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), direct_answer)
-                    await self.maybe_compact_conversation()
+                    self.run_background(
+                        self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), direct_answer),
+                        "memory",
+                    )
+                    self.run_background(self.maybe_compact_conversation(self.conversation.get("id") or ""), "context_compaction")
                     self.trim_history()
                     return
                 request_user_text += (
@@ -458,8 +472,11 @@ class DialogSession:
                     await self.send_event("assistant_attachment", attachments=assistant_attachments)
                 self.persist_messages([{"role": "assistant", "content": full_answer, "attachments": assistant_attachments}])
                 await self.send_event("conversation_saved", conversation=self.conversation)
-                await self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), full_answer)
-                await self.maybe_compact_conversation()
+                self.run_background(
+                    self.remember_turn_safely(self.memory_observation_text(user_text, user_attachments), full_answer),
+                    "memory",
+                )
+                self.run_background(self.maybe_compact_conversation(self.conversation.get("id") or ""), "context_compaction")
             self.trim_history()
         except Exception as exc:
             self.trace_log(trace_id, f"dialog:error {exc}")
@@ -559,6 +576,10 @@ class DialogSession:
                 "type": "sticker",
                 "asset_id": sticker["id"],
                 "url": sticker["url"],
+                "file": sticker.get("file") or "",
+                "send_file": sticker.get("send_file") or "",
+                "send_path": sticker.get("send_path") or "",
+                "thumbnail": sticker.get("thumbnail") or sticker.get("url") or "",
                 "mime": sticker.get("mime") or "image/png",
                 "tag": sticker.get("tag") or "",
                 "name": sticker.get("name") or "表情包",
@@ -577,14 +598,17 @@ class DialogSession:
             return user_text
         return user_text + "\n\n图片摘要（仅在通过记忆准入时才可记住）：\n" + "\n".join(image_summaries)
 
-    async def maybe_compact_conversation(self) -> None:
+    async def maybe_compact_conversation(self, conversation_id: str = "") -> None:
         if not getattr(self.settings, "context_compaction_enabled", True):
             return
-        history = self.conversation.get("messages") or []
+        conversation = self.conversation_store.load(conversation_id) if conversation_id else self.conversation
+        if not conversation:
+            return
+        history = conversation.get("messages") or []
         keep_messages = max(4, int(getattr(self.settings, "context_keep_recent_turns", 10)) * 2)
         if len(history) <= max(36, keep_messages + 8):
             return
-        compacted_until = int(self.conversation.get("compacted_until") or 0)
+        compacted_until = int(conversation.get("compacted_until") or 0)
         cutoff = max(0, len(history) - keep_messages)
         if cutoff <= compacted_until:
             return
@@ -596,7 +620,7 @@ class DialogSession:
         chunk = history[compacted_until:cutoff]
         if not chunk:
             return
-        old_summary = str(self.conversation.get("context_summary") or "")
+        old_summary = str(conversation.get("context_summary") or "")
         transcript = "\n".join(
             f"{item.get('role')}: {compact_text(item.get('content') or attachment_text(item.get('attachments') or []), 220)}"
             for item in chunk
@@ -622,11 +646,13 @@ class DialogSession:
         layers = list(self.conversation.get("context_summary_layers") or [])
         layers.insert(0, {"created_at": time.strftime("%Y-%m-%d %H:%M:%S"), "until": cutoff, "summary": summary})
         layers = layers[: max(1, int(getattr(self.settings, "context_summary_max_layers", 3)))]
-        self.conversation = self.conversation_store.update(
-            self.conversation["id"],
+        updated = self.conversation_store.update(
+            conversation["id"],
             {"context_summary": summary, "context_summary_layers": layers, "compacted_until": cutoff},
-        ) or self.conversation
-        self.messages = self.build_llm_messages(self.conversation)
+        )
+        if updated and self.conversation.get("id") == updated.get("id"):
+            self.conversation = updated
+            self.messages = self.build_llm_messages(self.conversation)
 
     async def remember_turn_safely(self, user_text: str, assistant_text: str) -> None:
         try:

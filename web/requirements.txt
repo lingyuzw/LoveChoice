@@ -1,6 +1,7 @@
 fastapi
 httpx
 numpy
+Pillow
 silero-vad
 torch
 uvicorn[standard]

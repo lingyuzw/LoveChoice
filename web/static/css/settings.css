@@ -779,6 +779,70 @@
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
+.sticker-review-toolbar {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(120px, auto) minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-muted) 62%, transparent);
+}
+.sticker-library-item {
+  grid-template-columns: 1fr;
+  grid-template-rows: 86px auto auto;
+  color: var(--text);
+  text-align: left;
+}
+.sticker-library-item.review-pending { border-color: color-mix(in srgb, var(--primary) 44%, var(--border)); }
+.sticker-library-item.review-approved { border-color: color-mix(in srgb, var(--success) 44%, var(--border)); }
+.sticker-library-item.review-failed { border-color: color-mix(in srgb, var(--danger) 42%, var(--border)); }
+.sticker-library-item small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.sticker-review-editor {
+  min-height: 120px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+.sticker-review-editor.active {
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: start;
+  color: var(--text);
+}
+.sticker-review-editor > img {
+  width: 132px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.sticker-editor-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.sticker-editor-form label {
+  display: grid;
+  gap: 5px;
+}
+.sticker-editor-form .wide {
+  grid-column: 1 / -1;
+}
+.sticker-editor-form textarea {
+  min-height: 70px;
+}
+.sticker-editor-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
 
 .proactive-layout {
   display: grid;
@@ -972,7 +1036,18 @@
   .greeting-options,
   .reminder-editor,
   .sticker-upload-row,
+  .sticker-review-toolbar,
   .sticker-test-row {
+    grid-template-columns: 1fr;
+  }
+  .sticker-review-editor.active {
+    grid-template-columns: 1fr;
+  }
+  .sticker-review-editor > img {
+    width: 100%;
+    max-width: 180px;
+  }
+  .sticker-editor-form {
     grid-template-columns: 1fr;
   }
   .greeting-time-range {
