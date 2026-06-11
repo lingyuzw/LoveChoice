@@ -45,6 +45,7 @@ from service_runtime.vad import MIC_SAMPLE_RATE, VadModelStore, VoiceVadSession
 from tools.direct_answers import direct_answer_from_tool
 from tools.runtime_brain import MemoryStore, ToolManager, parse_tool_call
 from core.text_utils import split_reply_messages
+from media.sticker_directives import StickerDirectiveStreamFilter, extract_sticker_directives
 
 END = object()
 GLOBAL_TTS_LOCK = asyncio.Lock()
@@ -131,6 +132,7 @@ class DialogSession:
         self.tts_pcm_tail = np.array([], dtype=np.int16)
         self.tts_pcm_started = False
         self.current_trace_id = ""
+        self.pending_sticker_tags: list[str] = []
 
     async def run(self) -> None:
         # Preload VAD in the background. Text-only chat should keep working
@@ -393,7 +395,8 @@ class DialogSession:
             if tool_result:
                 direct_answer = direct_answer_from_tool(tool_result)
                 if direct_answer:
-                    direct_answer = format_reply_paragraphs(direct_answer)
+                    directive_result = extract_sticker_directives(direct_answer)
+                    direct_answer = format_reply_paragraphs(directive_result.text)
                     self.trace_log(trace_id, f"tool:direct {tool_result.get('tool')}")
                     await self.send_event("assistant_start")
                     await self.send_event("tool", id=tool_result.get("tool"), arguments=tool_result.get("arguments") or {})
@@ -401,7 +404,7 @@ class DialogSession:
                     await self.stream_direct_tts(direct_answer)
                     self.messages.append({"role": "user", "content": request_user_text})
                     self.messages.append({"role": "assistant", "content": direct_answer})
-                    assistant_attachments = self.choose_reply_sticker(user_text, direct_answer, source)
+                    assistant_attachments = self.choose_reply_sticker(user_text, direct_answer, source, requested_tags=directive_result.tags)
                     if assistant_attachments:
                         await self.send_event("assistant_attachment", attachments=assistant_attachments)
                     self.persist_assistant_reply(direct_answer, attachments=assistant_attachments)
@@ -440,9 +443,12 @@ class DialogSession:
 
             self.messages.append({"role": "user", "content": request_user_text})
             if full_answer:
-                full_answer = format_reply_paragraphs(full_answer)
+                directive_result = extract_sticker_directives(full_answer)
+                requested_tags = [*self.pending_sticker_tags, *directive_result.tags]
+                self.pending_sticker_tags = []
+                full_answer = format_reply_paragraphs(directive_result.text)
                 self.messages.append({"role": "assistant", "content": full_answer})
-                assistant_attachments = self.choose_reply_sticker(user_text, full_answer, source)
+                assistant_attachments = self.choose_reply_sticker(user_text, full_answer, source, requested_tags=requested_tags)
                 if assistant_attachments:
                     await self.send_event("assistant_attachment", attachments=assistant_attachments)
                 self.persist_assistant_reply(full_answer, attachments=assistant_attachments)
@@ -457,6 +463,7 @@ class DialogSession:
             self.trace_log(trace_id, f"dialog:error {exc}")
             await self.send_event("error", message=f"Dialog failed: {exc}")
         finally:
+            self.pending_sticker_tags = []
             self.processing = old_processing
             await self.send_event("turn_done")
             self.finish_trace(trace_id)
@@ -528,9 +535,10 @@ class DialogSession:
             text += "\n\n用户随消息发送了图片。你只能基于图片摘要理解图片，不要假装看到了摘要以外的细节：\n" + "\n".join(image_lines)
         return text
 
-    def choose_reply_sticker(self, user_text: str, reply_text: str, source: str) -> list[dict]:
+    def choose_reply_sticker(self, user_text: str, reply_text: str, source: str, requested_tags: list[str] | None = None) -> list[dict]:
         session_id = self.conversation.get("id") or source or "web"
-        intent = self.sticker_policy.choose_intent(
+        requested_tags = [str(item or "").strip() for item in (requested_tags or []) if str(item or "").strip()]
+        intent = {"send": True, "tag": requested_tags[0], "avoid_id": ""} if requested_tags else self.sticker_policy.choose_intent(
             self.settings,
             session_id=session_id,
             user_text=user_text,
@@ -540,7 +548,11 @@ class DialogSession:
         if not intent.get("send"):
             self.sticker_policy.mark_text_only(session_id)
             return []
-        sticker = self.sticker_store.choose(str(intent.get("tag") or ""), avoid_id=str(intent.get("avoid_id") or ""), channel="web")
+        sticker = None
+        for tag in requested_tags or [str(intent.get("tag") or "")]:
+            sticker = self.sticker_store.choose(str(tag or ""), avoid_id=str(intent.get("avoid_id") or ""), channel="web")
+            if sticker:
+                break
         if not sticker:
             self.sticker_policy.mark_text_only(session_id)
             return []
@@ -679,8 +691,10 @@ class DialogSession:
 
     def persist_assistant_reply(self, text: str, *, attachments: list[dict] | None = None, source: str = "") -> None:
         parts = split_reply_messages(text)
-        if not parts:
+        if not parts and not attachments:
             return
+        if not parts:
+            parts = [""]
         items = []
         for index, part in enumerate(parts):
             item = {"role": "assistant", "content": part}
@@ -880,6 +894,7 @@ class DialogSession:
         buffer = ""
         full_answer = ""
         reasoning_filter = ReasoningStreamFilter()
+        sticker_filter = StickerDirectiveStreamFilter()
         first_chunk = True
         first_token = True
         started = time.perf_counter()
@@ -909,7 +924,7 @@ class DialogSession:
                     if reason:
                         finish_reason = reason
 
-                    text = reasoning_filter.feed(extract_llm_delta(data))
+                    text = sticker_filter.feed(reasoning_filter.feed(extract_llm_delta(data)))
                     if not text:
                         continue
 
@@ -933,7 +948,8 @@ class DialogSession:
                         buffer = ""
                         first_chunk = False
 
-        tail_text = reasoning_filter.flush()
+        tail_text = sticker_filter.feed(reasoning_filter.flush()) + sticker_filter.flush()
+        self.pending_sticker_tags = [*self.pending_sticker_tags, *sticker_filter.consume_tags()]
         if tail_text:
             full_answer += tail_text
             buffer += tail_text
@@ -953,9 +969,13 @@ class DialogSession:
                 self.trace_log(self.current_trace_id, f"llm:continuation_failed {exc}")
             if continuation:
                 self.trace_log(self.current_trace_id, f"llm:continuation len={len(continuation)}")
-                full_answer += continuation
-                buffer += continuation
-                await self.send_event("llm_delta", text=continuation)
+                continuation_result = extract_sticker_directives(continuation)
+                self.pending_sticker_tags = [*self.pending_sticker_tags, *continuation_result.tags]
+                continuation = continuation_result.text
+                if continuation:
+                    full_answer += continuation
+                    buffer += continuation
+                    await self.send_event("llm_delta", text=continuation)
 
         if buffer.strip():
             tts_text = clean_for_tts(buffer)

@@ -35,6 +35,7 @@ from data.profiles import BotProfileStore
 from tools.runtime_brain import MemoryStore, ToolManager
 from integration_runtime.weixin_media import WeixinImageSendError, WeixinVoiceSendError, send_weixin_image, send_weixin_voice
 from media.assets import StickerStore
+from media.sticker_directives import extract_sticker_directives
 from media.sticker_vision import ChatImageAnalyzer
 from media.sticker_policy import StickerPolicy
 from core.io_utils import read_json_file
@@ -1230,6 +1231,9 @@ class ExternalDialogEngine:
             reply_diag = {"image_vision_failed_direct_reply": True}
         else:
             reply_text, tool_result, direct_answer, tool_ms, llm_ms, reply_diag = await self.reply_text(runtime_settings, conversation, model_text, voice_requested=voice_requested)
+        directive_result = extract_sticker_directives(reply_text)
+        requested_sticker_tags = directive_result.tags
+        reply_text = directive_result.text
         if voice_requested and not clean_for_tts(reply_text):
             reply_text = voice_fallback_reply(text)
             reply_diag["voice_empty_fallback"] = True
@@ -1247,8 +1251,12 @@ class ExternalDialogEngine:
                 "attachments": image_attachments,
             }
         ]
-        assistant_attachments = [] if image_vision_failed else self.choose_reply_sticker(runtime_settings, conversation["id"], text, reply_text)
-        if reply_text.strip():
+        assistant_attachments = (
+            []
+            if image_vision_failed
+            else self.choose_reply_sticker(runtime_settings, conversation["id"], text, reply_text, requested_tags=requested_sticker_tags)
+        )
+        if reply_text.strip() or assistant_attachments:
             stored_parts = reply_parts or [reply_text]
             for index, part in enumerate(stored_parts):
                 messages_to_store.append(
@@ -1319,10 +1327,18 @@ class ExternalDialogEngine:
             "timings": timings,
         }
 
-    def choose_reply_sticker(self, settings: SessionSettings, session_id: str, user_text: str, reply_text: str) -> list[dict]:
+    def choose_reply_sticker(
+        self,
+        settings: SessionSettings,
+        session_id: str,
+        user_text: str,
+        reply_text: str,
+        requested_tags: list[str] | None = None,
+    ) -> list[dict]:
         if not self.sticker_store or not self.sticker_policy:
             return []
-        intent = self.sticker_policy.choose_intent(
+        requested_tags = [str(item or "").strip() for item in (requested_tags or []) if str(item or "").strip()]
+        intent = {"send": True, "tag": requested_tags[0], "avoid_id": ""} if requested_tags else self.sticker_policy.choose_intent(
             settings,
             session_id=session_id or "weixin",
             user_text=user_text,
@@ -1332,11 +1348,16 @@ class ExternalDialogEngine:
         if not intent.get("send"):
             self.sticker_policy.mark_text_only(session_id or "weixin")
             return []
-        sticker = self.sticker_store.choose(
-            str(intent.get("tag") or ""),
-            avoid_id=str(intent.get("avoid_id") or ""),
-            channel="weixin",
-        )
+        candidate_tags = requested_tags or [str(intent.get("tag") or "")]
+        sticker = None
+        for tag in candidate_tags:
+            sticker = self.sticker_store.choose(
+                tag,
+                avoid_id=str(intent.get("avoid_id") or ""),
+                channel="weixin",
+            )
+            if sticker:
+                break
         if not sticker:
             self.sticker_policy.mark_text_only(session_id or "weixin")
             return []
