@@ -140,6 +140,16 @@
   min-height: 42px;
 }
 
+.settings-hero-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.settings-hero-actions .soft-badge {
+  max-width: 260px;
+}
+
 .theme-section {
   display: grid; gap: 12px;
   padding: 14px; border: 1px solid var(--border);
@@ -226,6 +236,13 @@
 }
 
 @media (max-width: 620px) {
+  .settings-hero {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .settings-hero .primary-action {
+    width: 100%;
+  }
   .settings-overview-grid {
     grid-template-columns: 1fr;
   }
@@ -401,6 +418,22 @@
   justify-self: start;
 }
 
+.tool-provider-card .form-grid.compact,
+.bot-profile-card .form-grid.compact,
+#commands .form-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tool-provider-card .form-grid .wide,
+.bot-profile-card .form-grid .wide,
+#commands .form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.tool-provider-card .tool-resolve-result {
+  max-height: 180px;
+}
+
 .tool-provider-head {
   display: flex;
   align-items: baseline;
@@ -482,6 +515,19 @@
   }
   .bot-profile-card .inline-actions {
     grid-column: 1;
+  }
+  .dialog-mode-panel,
+  .model-file-row {
+    grid-template-columns: 1fr;
+  }
+  .dialog-mode-toggle {
+    justify-self: stretch;
+  }
+  .panel-head,
+  .appearance-card-head,
+  .asset-library-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }
 
@@ -945,6 +991,9 @@
 
 .proactive-event {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1030,6 +1079,9 @@
 
 @media (max-width: 860px) {
   .proactive-card > .form-grid.compact,
+  .tool-provider-card .form-grid.compact,
+  .bot-profile-card .form-grid.compact,
+  #commands .form-grid.compact,
   .proactive-time-grid,
   .toggle-row,
   .greeting-switches,
@@ -1130,4 +1182,15 @@
 
 .model-panel-locked .secondary-action {
   box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .dialog-mode-panel,
+  .model-file-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dialog-mode-toggle {
+    justify-self: stretch;
+  }
 }

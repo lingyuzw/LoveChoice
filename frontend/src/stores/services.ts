@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import {
+  clearAllServiceLogs,
   clearServiceLogs,
   fetchServiceLogs,
   loadServices,
@@ -8,6 +9,7 @@ import {
   startService,
   stopAllServices,
   stopService,
+  updateServiceConfig,
   type ServiceSummary,
 } from "@/api/services";
 
@@ -105,11 +107,28 @@ export const useServicesStore = defineStore("services", {
       await stopAllServices();
       await this.trackUntilStable();
     },
+    async restartAll() {
+      await stopAllServices();
+      await startAllServices();
+      await this.trackUntilStable();
+    },
     async clearLogs() {
       const id = this.selected?.id;
       if (!id) return;
       await clearServiceLogs(id);
       await this.refreshLogs();
+    },
+    async clearAllLogs() {
+      await clearAllServiceLogs();
+      this.logs = "";
+    },
+    async updateConfig(service: ServiceSummary) {
+      await updateServiceConfig(service.id, {
+        cwd: service.cwd || "",
+        health_url: service.health_url || "",
+        startup_wait_sec: Number(service.startup_wait_sec || 0),
+        command: service.command || "",
+      });
     },
     async trackUntilStable(id = "") {
       for (let i = 0; i < 12; i += 1) {

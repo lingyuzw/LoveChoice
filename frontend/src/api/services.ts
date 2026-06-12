@@ -7,6 +7,9 @@ export interface ServiceSummary {
   running?: boolean;
   status?: string;
   health_url?: string;
+  cwd?: string;
+  command?: string;
+  startup_wait_sec?: number;
   pid?: number | string | null;
   port?: number | string | null;
   health?: string | null;
@@ -44,6 +47,18 @@ export async function fetchServiceLogs(serviceId: string) {
 
 export async function clearServiceLogs(serviceId: string) {
   return fetchJson(`/api/services/${encodeURIComponent(serviceId)}/logs`, { method: "DELETE" });
+}
+
+export async function clearAllServiceLogs() {
+  return fetchJson("/api/services/logs", { method: "DELETE" });
+}
+
+export async function updateServiceConfig(serviceId: string, payload: Partial<ServiceSummary>) {
+  return fetchJson(`/api/services/${encodeURIComponent(serviceId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function loadSystemResources() {

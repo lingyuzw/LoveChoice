@@ -184,8 +184,9 @@
   min-height: 0; display: flex; flex-direction: column;
   align-items: center; overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 28%, transparent), transparent 220px),
-    radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 32%, transparent), transparent 220px),
+    linear-gradient(90deg, color-mix(in srgb, var(--info) 5%, transparent), transparent 46%, color-mix(in srgb, var(--accent-rose) 4%, transparent)),
+    linear-gradient(135deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 20px),
     var(--bg);
   transition: background 200ms;
 }
@@ -374,7 +375,7 @@ html.theme-light .message-avatar {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.035);
 }
 .composer textarea {
   min-height: 44px; max-height: 132px; resize: none; overflow-y: hidden;
@@ -461,9 +462,15 @@ html.theme-light .message-avatar {
     max-height: 220px;
   }
   .chat-area > * { max-width: 100%; }
-  .composer { grid-template-columns: 40px 40px minmax(0, 1fr) 40px; }
-  .chat-composer .composer { grid-template-columns: 40px 40px minmax(0, 1fr) repeat(4, 40px); overflow-x: auto; }
-  .welcome-composer { grid-template-columns: 40px 40px minmax(0, 1fr) repeat(4, 40px); overflow-x: auto; }
+  .composer {
+    grid-template-columns: 40px 40px minmax(160px, 1fr) repeat(4, 40px);
+    overflow-x: auto;
+  }
+  .chat-composer,
+  .chat-welcome {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
   .composer textarea { border-radius: var(--radius-md); }
   .message-body { max-width: calc(100% - 40px); }
   .message { max-width: 100%; font-size: var(--font-sm); }

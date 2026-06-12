@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
-import { Power, RefreshCcw, RefreshCw, Square } from "@lucide/vue";
+import { Power, RefreshCcw, RefreshCw, Square, Trash2 } from "@lucide/vue";
 import ResourceSection from "@/components/services/ResourceSection.vue";
 import ServiceCard from "@/components/services/ServiceCard.vue";
 import ServiceLogsPanel from "@/components/services/ServiceLogsPanel.vue";
@@ -27,7 +27,8 @@ onUnmounted(() => {
         <div class="head-actions">
           <button class="primary-action" type="button" @click="services.startAll()"><Power :size="16" /> 一键启动</button>
           <button class="secondary-action" type="button" @click="services.stopAll()"><Square :size="16" /> 停止全部</button>
-          <button class="secondary-action" type="button" @click="services.startAll()"><RefreshCcw :size="16" /> 重启全部</button>
+          <button class="secondary-action" type="button" @click="services.restartAll()"><RefreshCcw :size="16" /> 重启全部</button>
+          <button class="secondary-action" type="button" @click="services.clearAllLogs()"><Trash2 :size="16" /> 清空日志</button>
           <button class="icon-button" type="button" title="刷新" @click="services.reload()"><RefreshCw :size="16" /></button>
         </div>
       </section>
@@ -54,6 +55,7 @@ onUnmounted(() => {
         @select="services.select"
         @refresh="services.refreshLogs"
         @clear="services.clearLogs"
+        @clear-all="services.clearAllLogs"
         @update:live="services.live = $event"
       />
     </div>

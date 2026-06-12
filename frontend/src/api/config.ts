@@ -1,6 +1,11 @@
 import { fetchJson } from "./client";
 
 export interface PublicConfig {
+  asr_mode?: string;
+  asr_url?: string;
+  asr_model?: string;
+  asr_timeout?: number;
+  asr_max_tokens?: number;
   dialog_mode: "local" | "api";
   llm_url: string;
   llm_model: string;
@@ -68,6 +73,20 @@ export interface PublicConfig {
   [key: string]: unknown;
 }
 
+export interface ModelFileEntry {
+  name: string;
+  path: string;
+  size?: number;
+  modified_at?: string;
+}
+
+export interface ModelFilesResponse {
+  root: string;
+  parent?: string;
+  directories: ModelFileEntry[];
+  files: ModelFileEntry[];
+}
+
 export async function loadConfig(): Promise<PublicConfig> {
   return fetchJson<PublicConfig>("/api/config");
 }
@@ -90,4 +109,11 @@ export async function saveToolConfig(patch: Record<string, unknown>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+}
+
+export async function listModelFiles(root = "", query = "") {
+  const params = new URLSearchParams();
+  if (root.trim()) params.set("root", root.trim());
+  if (query.trim()) params.set("query", query.trim());
+  return fetchJson<ModelFilesResponse>(`/api/files/models${params.toString() ? `?${params}` : ""}`);
 }

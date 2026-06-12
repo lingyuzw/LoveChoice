@@ -1,0 +1,90 @@
+[2m10:11:16[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/config[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:16[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:16[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:16[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:18[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:18[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:20[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:20[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:21[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:21[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:23[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:23[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:25[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:25[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:27[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:29[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:29[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:30[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:30[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:34[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:34[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:36[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:36[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:38[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:38[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:39[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/services[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)
+[2m10:11:39[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/system/resources[39m
+Error: connect ECONNREFUSED 127.0.0.1:7860
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1705:16)

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
+  Activity,
+  AlarmPlus,
   Bot,
   Cloud,
   Cpu,
+  Eraser,
+  FileSearch,
+  FolderOpen,
   Globe2,
   HardDrive,
   ImagePlus,
@@ -13,25 +18,57 @@ import {
   MicVocal,
   Moon,
   Palette,
+  Plus,
+  RefreshCw,
+  Route,
   Save,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   Terminal,
+  Trash2,
   Volume2,
+  X,
 } from "@lucide/vue";
 import { uploadAvatar } from "@/api/assets";
 import { useAppStore } from "@/stores/app";
-import type { PublicConfig } from "@/api/config";
+import { listModelFiles, type ModelFileEntry, type ModelFilesResponse, type PublicConfig } from "@/api/config";
+import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_OPTIONS, useToolsStore } from "@/stores/tools";
+import { useEngagementStore } from "@/stores/engagement";
+import { useProfilesStore } from "@/stores/profiles";
+import { useServicesStore } from "@/stores/services";
 import { fileToDataUrl } from "@/utils/files";
 
 const app = useAppStore();
 const router = useRouter();
+const tools = useToolsStore();
+const engagement = useEngagementStore();
+const profiles = useProfilesStore();
+const services = useServicesStore();
 const form = reactive<Partial<PublicConfig>>({});
 const userAvatarInput = ref<HTMLInputElement | null>(null);
 const assistantAvatarInput = ref<HTMLInputElement | null>(null);
+const theme = ref<"dark" | "light">("dark");
+const modelFileModalOpen = ref(false);
+const modelFileRoot = ref("");
+const modelFileQuery = ref("");
+const modelFileResult = ref<ModelFilesResponse | null>(null);
+const modelFileLoading = ref(false);
+const modelFileError = ref("");
+const modelFilePath = ref("");
+const settingsMessage = ref("");
+const providerKeys = Object.keys(PROVIDER_FIELDS);
 const localDisabled = computed(() => form.dialog_mode === "api");
 const apiDisabled = computed(() => form.dialog_mode === "local");
+const pendingReminders = computed(() => engagement.pendingReminders.slice(0, 8));
+const recentEvents = computed(() => engagement.recentEvents);
+
+onMounted(() => {
+  theme.value = window.localStorage.getItem("branchwhisper:theme") === "light" ? "light" : "dark";
+  applyTheme(theme.value);
+  void hydrateSettings();
+});
 
 watch(
   () => app.config,
@@ -43,7 +80,21 @@ watch(
 );
 
 async function saveAll() {
-  await app.saveConfig({ ...form });
+  try {
+    settingsMessage.value = "正在保存配置...";
+    syncModelFileToServiceCommand();
+    await app.saveConfig({ ...form });
+    await tools.save();
+    await engagement.save();
+    await profiles.saveAll();
+    await Promise.all(services.services.map((service) => services.updateConfig(service)));
+    await Promise.allSettled([tools.reload(), engagement.reload(), profiles.reload(), services.reload(true)]);
+    syncModelFilePath();
+    settingsMessage.value = "配置已应用";
+  } catch (error) {
+    settingsMessage.value = `保存失败：${error instanceof Error ? error.message : String(error)}`;
+    throw error;
+  }
 }
 
 async function openAssets() {
@@ -53,6 +104,21 @@ async function openAssets() {
 
 function setMode(mode: "local" | "api") {
   form.dialog_mode = mode;
+}
+
+function applyTheme(nextTheme: "dark" | "light") {
+  theme.value = nextTheme;
+  window.localStorage.setItem("branchwhisper:theme", nextTheme);
+  document.documentElement.classList.toggle("theme-light", nextTheme === "light");
+}
+
+async function hydrateSettings() {
+  await Promise.allSettled([tools.reload(), engagement.reload(), profiles.reload(), services.reload(true)]);
+  syncModelFilePath();
+}
+
+function jumpTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function handleAvatarSelected(event: Event, target: "user" | "assistant") {
@@ -72,6 +138,162 @@ async function clearAvatar(target: "user" | "assistant") {
   if (target === "user") form.web_user_avatar_url = "";
   else form.web_assistant_avatar_url = "";
   await saveAll();
+}
+
+function eventValue(event: Event) {
+  return (event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+}
+
+function parseProviderValue(field: string, value: string) {
+  if (field === "enabled" || field.endsWith("_enabled")) return value === "true";
+  if (["limit", "max_chars"].includes(field)) return Number(value || 0);
+  return value;
+}
+
+function setProviderField(providerKey: string, field: string, value: string) {
+  tools.setProviderField(providerKey, field, parseProviderValue(field, value));
+}
+
+function providerFieldValue(providerKey: string, field: string) {
+  const value = (tools.config[providerKey] || {})[field];
+  if (typeof value === "boolean") return String(value);
+  return String(value ?? "");
+}
+
+function providerFieldLabel(field: string) {
+  return {
+    enabled: "启用",
+    provider: "服务商",
+    base_url: "Base URL",
+    api_key: "API Key",
+    default_location: "默认地点",
+    limit: "数量上限",
+    region: "区域",
+    user_agent: "User Agent",
+    max_chars: "最大字符",
+    web_enabled: "Web",
+    weixin_enabled: "微信",
+    webhook_url: "Webhook",
+  }[field] || field;
+}
+
+function providerSecretState(providerKey: string) {
+  const provider = tools.config[providerKey] || {};
+  if (provider.api_key_set || provider.webhook_url_set) return "密钥已保存";
+  if (provider.api_key_masked || provider.webhook_url_masked) return provider.api_key_masked || provider.webhook_url_masked;
+  return "未配置密钥";
+}
+
+function providerInputType(field: string) {
+  if (field === "api_key" || field === "webhook_url") return "password";
+  if (field === "limit" || field === "max_chars") return "number";
+  return "text";
+}
+
+function formatJson(value: unknown) {
+  return value ? JSON.stringify(value, null, 2) : "等待测试。";
+}
+
+function llmService() {
+  return services.services.find((item) => item.id === "llm") || null;
+}
+
+function syncModelFilePath() {
+  const explicit = String((form.llm_model_file as string) || "").trim();
+  modelFilePath.value = explicit || extractCommandModelPath(llmService()?.command || "");
+}
+
+function syncModelFileToServiceCommand() {
+  const path = modelFilePath.value.trim();
+  if (!path) return;
+  const service = llmService();
+  if (!service) return;
+  service.command = replaceCommandModelPath(service.command || "", path);
+  (form as Record<string, unknown>).llm_model_file = path;
+}
+
+function openModelPicker() {
+  syncModelFilePath();
+  modelFileRoot.value = parentPath(modelFilePath.value) || llmService()?.cwd || "";
+  modelFileQuery.value = "";
+  modelFileModalOpen.value = true;
+  void refreshModelFiles();
+}
+
+async function refreshModelFiles() {
+  modelFileLoading.value = true;
+  modelFileError.value = "";
+  try {
+    modelFileResult.value = await listModelFiles(modelFileRoot.value, modelFileQuery.value);
+    modelFileRoot.value = modelFileResult.value.root || modelFileRoot.value;
+  } catch (error) {
+    modelFileError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    modelFileLoading.value = false;
+  }
+}
+
+function chooseModelDirectory(entry: ModelFileEntry) {
+  modelFileRoot.value = entry.path;
+  void refreshModelFiles();
+}
+
+function goModelParent() {
+  if (!modelFileResult.value?.parent) return;
+  modelFileRoot.value = modelFileResult.value.parent;
+  void refreshModelFiles();
+}
+
+function chooseModelFile(entry: ModelFileEntry) {
+  modelFilePath.value = entry.path;
+  syncModelFileToServiceCommand();
+  modelFileModalOpen.value = false;
+}
+
+function extractCommandModelPath(command: string) {
+  const match = String(command || "").match(/(?:^|\s)(?:-m|--model)\s+("[^"]+"|'[^']+'|\S+)|(?:^|\s)--model=("[^"]+"|'[^']+'|\S+)/);
+  const raw = match?.[1] || match?.[2] || "";
+  return raw.replace(/^["']|["']$/g, "");
+}
+
+function replaceCommandModelPath(command: string, path: string) {
+  const quoted = shellQuote(path);
+  const text = String(command || "").trim();
+  if (!text) return `--model ${quoted}`;
+  if (/(^|\s)(-m|--model)\s+("[^"]+"|'[^']+'|\S+)/.test(text)) {
+    return text.replace(/(^|\s)(-m|--model)\s+("[^"]+"|'[^']+'|\S+)/, `$1$2 ${quoted}`);
+  }
+  if (/(^|\s)--model=("[^"]+"|'[^']+'|\S+)/.test(text)) {
+    return text.replace(/(^|\s)--model=("[^"]+"|'[^']+'|\S+)/, `$1--model=${quoted}`);
+  }
+  return `${text} --model ${quoted}`;
+}
+
+function parentPath(path: string) {
+  const text = String(path || "").trim().replace(/\\/g, "/");
+  if (!text || !text.includes("/")) return "";
+  return text.slice(0, text.lastIndexOf("/"));
+}
+
+function shellQuote(path: string) {
+  const text = String(path || "").trim();
+  if (!text) return '""';
+  return /\s/.test(text) ? `"${text.replace(/"/g, '\\"')}"` : text;
+}
+
+function formatFileSize(size?: number) {
+  let value = Number(size || 0);
+  const units = ["B", "KB", "MB", "GB"];
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value.toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatTime(value?: string) {
+  return value ? value.replace("T", " ").slice(0, 16) : "--";
 }
 </script>
 
@@ -103,9 +325,12 @@ async function clearAvatar(target: "user" | "assistant") {
             <h2>本地模型与对话能力</h2>
             <p>常用配置直接展开，复杂能力进入对应页面或后续弹窗，避免一个配置页堆满所有东西。</p>
           </div>
-          <button class="primary-action" type="button" @click="saveAll">
-            <Save :size="16" /> 保存当前配置
-          </button>
+          <div class="settings-hero-actions">
+            <span v-if="settingsMessage" class="soft-badge">{{ settingsMessage }}</span>
+            <button class="primary-action" type="button" @click="saveAll">
+              <Save :size="16" /> 保存当前配置
+            </button>
+          </div>
         </section>
 
         <section class="settings-overview-grid">
@@ -117,15 +342,15 @@ async function clearAvatar(target: "user" | "assistant") {
           </article>
           <article class="settings-overview-card primary-card">
             <span><Sparkles :size="15" />主动性</span>
-            <strong>规则触达</strong>
+            <strong>{{ engagement.config.enabled ? "已启用" : "默认关闭" }}</strong>
             <small>早安、提醒、主动追问</small>
-            <button class="secondary-action" type="button" disabled><Settings2 :size="14" />后续弹窗</button>
+            <button class="secondary-action" type="button" @click="jumpTo('proactive')"><Settings2 :size="14" />配置</button>
           </article>
           <article class="settings-overview-card">
             <span><Bot :size="15" />人格</span>
-            <strong>默认人格</strong>
+            <strong>{{ profiles.profiles.length || 0 }} 个 Profile</strong>
             <small>Profile、工具开关、角色风格</small>
-            <button class="secondary-action" type="button" disabled><Settings2 :size="14" />配置</button>
+            <button class="secondary-action" type="button" @click="jumpTo('botProfiles')"><Settings2 :size="14" />配置</button>
           </article>
           <article class="settings-overview-card">
             <span><Volume2 :size="15" />语音合成</span>
@@ -150,8 +375,8 @@ async function clearAvatar(target: "user" | "assistant") {
                 <small>主题与字号</small>
               </div>
               <div class="theme-toggle-group theme-toggle-group--compact">
-                <button class="active" type="button"><Moon :size="15" />深色</button>
-                <button type="button"><Sun :size="15" />浅色</button>
+                <button :class="{ active: theme === 'dark' }" type="button" @click="applyTheme('dark')"><Moon :size="15" />深色</button>
+                <button :class="{ active: theme === 'light' }" type="button" @click="applyTheme('light')"><Sun :size="15" />浅色</button>
               </div>
               <label class="compact-field"><span>页面文字大小</span><input v-model.number="form.ui_font_scale" type="number" min="0.9" max="1.25" step="0.05" /></label>
             </section>
@@ -215,6 +440,16 @@ async function clearAvatar(target: "user" | "assistant") {
             <label class="thinking-toggle"><input v-model="form.thinking_enabled" type="checkbox" /> 启用思考模式，仅输出最终结果</label>
           </div>
 
+          <div class="dialog-feature-card compact-feature-card">
+            <div class="appearance-card-head"><strong>ASR 语音识别</strong><small>本地转写或 Chat ASR 兼容接口</small></div>
+            <div class="form-grid compact">
+              <label><span>ASR Mode</span><select v-model="form.asr_mode"><option value="transcription">transcription</option><option value="chat">chat</option></select></label>
+              <label><span>ASR Model</span><input v-model="form.asr_model" /></label>
+              <label><span>ASR Timeout</span><input v-model.number="form.asr_timeout" type="number" min="5" max="300" step="1" /></label>
+              <label class="wide"><span>ASR URL</span><input v-model="form.asr_url" /></label>
+            </div>
+          </div>
+
           <section class="local-engine-card" :class="{ 'model-panel-locked': localDisabled }" data-locked-label="当前使用 API 模型，本地模型参数已锁定">
             <div class="appearance-card-head"><strong>Local Chat Completions</strong><small>仅在本地模型模式下生效</small></div>
             <div class="form-grid compact">
@@ -226,8 +461,8 @@ async function clearAvatar(target: "user" | "assistant") {
               <label class="wide model-file-field">
                 <span>LLM 模型文件</span>
                 <div class="model-file-row">
-                  <input v-model="form.llm_model_file" :disabled="localDisabled" placeholder="选择或粘贴 .gguf / .safetensors / .bin 模型文件路径" />
-                  <button class="secondary-action" type="button" disabled>选择</button>
+                  <input v-model="modelFilePath" :disabled="localDisabled" placeholder="选择或粘贴 .gguf / .safetensors / .bin 模型文件路径" @change="syncModelFileToServiceCommand" />
+                  <button class="secondary-action" type="button" :disabled="localDisabled" @click="openModelPicker"><FileSearch :size="16" /> 选择</button>
                 </div>
               </label>
             </div>
@@ -252,7 +487,7 @@ async function clearAvatar(target: "user" | "assistant") {
               <p class="eyebrow">Network Tools</p>
               <h2>联网工具</h2>
             </div>
-            <span class="soft-badge">配置入口保留</span>
+            <span class="soft-badge">{{ tools.loading ? "加载中" : "Provider Config" }}</span>
           </div>
           <div class="form-grid compact">
             <label><span>工具总开关</span><select v-model="form.tools_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
@@ -260,6 +495,51 @@ async function clearAvatar(target: "user" | "assistant") {
             <label><span>工具超时秒</span><input v-model.number="form.tools_timeout" type="number" min="2" max="60" step="1" /></label>
             <label><span>结果最大字符</span><input v-model.number="form.tools_max_result_chars" type="number" min="500" max="16000" step="100" /></label>
           </div>
+
+          <div class="tool-provider-grid tool-provider-overview">
+            <section v-for="providerKey in providerKeys" :key="providerKey" class="tool-provider-card overview-card" :class="{ disabled: tools.config[providerKey]?.enabled === false }">
+              <div class="tool-provider-head">
+                <strong>{{ PROVIDER_LABELS[providerKey] || providerKey }}</strong>
+                <small>{{ tools.config[providerKey]?.enabled === false ? "关闭" : "启用" }}</small>
+              </div>
+              <div class="tool-provider-status">
+                <span v-if="tools.config[providerKey]?.provider">{{ tools.config[providerKey]?.provider }}</span>
+                <span v-if="PROVIDER_FIELDS[providerKey]?.includes('api_key') || PROVIDER_FIELDS[providerKey]?.includes('webhook_url')">{{ providerSecretState(providerKey) }}</span>
+                <span v-if="tools.config[providerKey]?.limit">limit {{ tools.config[providerKey]?.limit }}</span>
+              </div>
+              <div class="form-grid compact">
+                <label v-for="field in PROVIDER_FIELDS[providerKey]" :key="field" :class="{ wide: field === 'base_url' || field === 'api_key' || field === 'webhook_url' || field === 'user_agent' }">
+                  <span>{{ providerFieldLabel(field) }}</span>
+                  <select v-if="field === 'enabled' || field.endsWith('_enabled')" :value="providerFieldValue(providerKey, field)" @change="setProviderField(providerKey, field, eventValue($event))">
+                    <option value="true">启用</option>
+                    <option value="false">关闭</option>
+                  </select>
+                  <select v-else-if="field === 'provider'" :value="providerFieldValue(providerKey, field)" @change="setProviderField(providerKey, field, eventValue($event))">
+                    <option v-for="[value, label] in PROVIDER_OPTIONS[providerKey] || []" :key="value" :value="value">{{ label }}</option>
+                  </select>
+                  <input
+                    v-else
+                    :type="providerInputType(field)"
+                    :value="providerFieldValue(providerKey, field)"
+                    :placeholder="field === 'api_key' || field === 'webhook_url' ? providerSecretState(providerKey) : ''"
+                    @input="setProviderField(providerKey, field, eventValue($event))"
+                  />
+                </label>
+              </div>
+              <div class="tool-provider-actions">
+                <button class="secondary-action" type="button" @click="tools.runProviderTest(providerKey)"><Activity :size="15" />测试</button>
+              </div>
+              <pre v-if="tools.testResults[providerKey]" class="tool-resolve-result">{{ tools.testResults[providerKey] }}</pre>
+            </section>
+          </div>
+
+          <div class="tool-resolve-row">
+            <input v-model="tools.resolveText" placeholder="输入一句话，测试工具路由解析" />
+            <button class="secondary-action" type="button" @click="tools.runResolve"><Route :size="15" />解析</button>
+            <button class="secondary-action" type="button" @click="tools.clearResolve"><Eraser :size="15" />清空</button>
+          </div>
+          <pre class="tool-resolve-result">{{ formatJson(tools.resolveResult) }}</pre>
+          <p v-if="tools.error" class="muted-copy">工具配置读取失败：{{ tools.error }}</p>
         </article>
 
         <article class="settings-panel dialog-features-panel" id="dialogFeatures">
@@ -278,6 +558,8 @@ async function clearAvatar(target: "user" | "assistant") {
                 <label><span>模型</span><input v-model="form.vision_model" placeholder="qwen-vl" /></label>
                 <label class="wide"><span>Vision URL</span><input v-model="form.vision_url" placeholder="http://127.0.0.1:8081/v1/chat/completions" /></label>
                 <label><span>超时秒</span><input v-model.number="form.vision_timeout" type="number" min="5" max="180" step="1" /></label>
+                <label><span>图片上限 MB</span><input v-model.number="form.vision_max_image_mb" type="number" min="1" max="64" step="1" /></label>
+                <label><span>提取记忆</span><select v-model="form.vision_memory_extract_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
               </div>
             </section>
             <section class="dialog-feature-card compact-feature-card asset-jump-card">
@@ -291,6 +573,9 @@ async function clearAvatar(target: "user" | "assistant") {
                 <label><span>启用</span><select v-model="form.context_compaction_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
                 <label><span>窗口 Tokens</span><input v-model.number="form.context_window_tokens" type="number" min="2048" max="262144" step="512" /></label>
                 <label><span>触发比例</span><input v-model.number="form.context_compaction_ratio" type="number" min="0.4" max="0.95" step="0.05" /></label>
+                <label><span>保留最近轮数</span><input v-model.number="form.context_keep_recent_turns" type="number" min="1" max="40" step="1" /></label>
+                <label><span>摘要长度</span><input v-model.number="form.context_summary_max_chars" type="number" min="400" max="12000" step="100" /></label>
+                <label><span>摘要层数</span><input v-model.number="form.context_summary_max_layers" type="number" min="1" max="8" step="1" /></label>
               </div>
             </section>
           </div>
@@ -302,14 +587,131 @@ async function clearAvatar(target: "user" | "assistant") {
               <p class="eyebrow">Proactive Intelligence</p>
               <h2>主动性</h2>
             </div>
-            <span class="soft-badge">后续弹窗配置</span>
+            <span class="soft-badge">{{ engagement.config.enabled ? "主动消息已启用" : "主动消息关闭" }}</span>
           </div>
-          <p class="muted-copy">日常问候、主动追问和定时提醒会保留为独立配置入口，避免撑满主配置页。</p>
+          <div class="proactive-layout">
+            <section class="proactive-card">
+              <div class="appearance-card-head"><strong>全局策略</strong><small>问候、追问、提醒共用</small></div>
+              <div class="form-grid compact">
+                <label><span>主动性总开关</span><select v-model="engagement.config.enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+                <label><span>每日上限</span><input v-model.number="engagement.config.daily_limit" type="number" min="0" max="30" step="1" /></label>
+                <label><span>语气</span><select v-model="engagement.config.tone"><option value="warm">温和</option><option value="concise">简洁</option><option value="playful">轻快</option></select></label>
+                <label><span>追问强度</span><select v-model="engagement.config.followup_level"><option value="off">关闭</option><option value="restrained">克制</option><option value="standard">标准</option><option value="active">积极</option></select></label>
+              </div>
+              <div class="toggle-row">
+                <label><input v-model="engagement.config.ask_followup_enabled" type="checkbox" />缺信息时主动追问</label>
+                <label><input v-model="engagement.config.channels.web" type="checkbox" />Web 通道</label>
+                <label><input v-model="engagement.config.channels.weixin" type="checkbox" />微信通道</label>
+              </div>
+              <div class="greeting-time-range">
+                <label><input v-model="engagement.config.quiet_hours_enabled" type="checkbox" />免打扰</label>
+                <span>开始</span><input v-model="engagement.config.quiet_start" type="time" />
+                <span>结束</span><input v-model="engagement.config.quiet_end" type="time" />
+              </div>
+            </section>
+
+            <section class="proactive-card">
+              <div class="appearance-card-head"><strong>问候场景</strong><small>窗口内只会生成一次</small></div>
+              <div class="greeting-switches">
+                <label><input v-model="engagement.config.greetings.enabled" type="checkbox" />启用问候</label>
+                <label><input v-model="engagement.config.greetings.good_morning.enabled" type="checkbox" />早安</label>
+                <label><input v-model="engagement.config.greetings.noon.enabled" type="checkbox" />午间</label>
+                <label><input v-model="engagement.config.greetings.good_night.enabled" type="checkbox" />晚安</label>
+                <label><input v-model="engagement.config.greetings.long_absence.enabled" type="checkbox" />久未互动</label>
+              </div>
+              <div class="form-grid compact">
+                <label><span>早安开始</span><input v-model="engagement.config.greetings.good_morning.window_start" type="time" /></label>
+                <label><span>早安结束</span><input v-model="engagement.config.greetings.good_morning.window_end" type="time" /></label>
+                <label><span>午间开始</span><input v-model="engagement.config.greetings.noon.window_start" type="time" /></label>
+                <label><span>午间结束</span><input v-model="engagement.config.greetings.noon.window_end" type="time" /></label>
+                <label><span>晚安开始</span><input v-model="engagement.config.greetings.good_night.window_start" type="time" /></label>
+                <label><span>晚安结束</span><input v-model="engagement.config.greetings.good_night.window_end" type="time" /></label>
+                <label><span>久未互动小时</span><input v-model.number="engagement.config.greetings.long_absence.after_hours" type="number" min="1" max="720" step="1" /></label>
+              </div>
+              <div class="greeting-options">
+                <label><input v-model="engagement.config.greetings.good_morning.with_weather" type="checkbox" />早安带天气</label>
+                <label><input v-model="engagement.config.greetings.good_morning.with_reminders" type="checkbox" />早安带提醒</label>
+                <label><input v-model="engagement.config.greetings.noon.with_reminders" type="checkbox" />午间带提醒</label>
+              </div>
+            </section>
+
+            <section class="proactive-card">
+              <div class="appearance-card-head"><strong>触发器</strong><small>控制后台主动事件来源</small></div>
+              <div class="toggle-row">
+                <label><input v-model="engagement.config.triggers.reminders" type="checkbox" />定时提醒</label>
+                <label><input v-model="engagement.config.triggers.service_alerts" type="checkbox" />服务告警</label>
+                <label><input v-model="engagement.config.triggers.weather" type="checkbox" />天气</label>
+                <label><input v-model="engagement.config.triggers.news_watch" type="checkbox" />新闻观察</label>
+                <label><input v-model="engagement.config.triggers.emotion_care" type="checkbox" />情绪关怀</label>
+                <label><input v-model="engagement.config.triggers.long_goal_followup" type="checkbox" />长期目标追踪</label>
+              </div>
+              <button class="secondary-action" type="button" @click="engagement.runTest"><Sparkles :size="15" />发送测试主动消息</button>
+            </section>
+
+            <section class="proactive-card">
+              <div class="appearance-card-head"><strong>定时提醒</strong><small>{{ pendingReminders.length }} 条待触发</small></div>
+              <div class="reminder-editor">
+                <input v-model="engagement.reminderTitle" placeholder="提醒内容" />
+                <input v-model="engagement.reminderDueAt" type="datetime-local" />
+                <select v-model="engagement.reminderChannel">
+                  <option value="web">Web</option>
+                  <option value="weixin">微信</option>
+                </select>
+                <button class="primary-action" type="button" @click="engagement.createReminder"><AlarmPlus :size="15" />添加</button>
+              </div>
+              <div class="reminder-list">
+                <article v-for="reminder in pendingReminders" :key="reminder.id" class="reminder-item">
+                  <div>
+                    <strong>{{ reminder.title }}</strong>
+                    <small>{{ formatTime(reminder.due_at) }} · {{ reminder.channel || "web" }}</small>
+                  </div>
+                  <button class="icon-button" type="button" title="删除提醒" @click="engagement.removeReminder(reminder.id)"><Trash2 :size="15" /></button>
+                </article>
+                <div v-if="!pendingReminders.length" class="model-file-empty">暂无待触发提醒</div>
+              </div>
+            </section>
+
+            <section class="proactive-card">
+              <div class="appearance-card-head"><strong>最近事件</strong><small>主动消息发送记录</small></div>
+              <div class="proactive-events">
+                <article v-for="event in recentEvents" :key="event.id" class="proactive-event" :class="event.status">
+                  <div>
+                    <strong>{{ event.title || event.kind || "主动事件" }}</strong>
+                    <span>{{ event.content || event.last_error || "--" }}</span>
+                    <small>{{ formatTime(event.created_at) }} · {{ event.channel || "web" }} · {{ event.status || "pending" }}</small>
+                  </div>
+                  <button class="icon-button" type="button" title="忽略事件" @click="engagement.dismissEvent(event.id)"><X :size="15" /></button>
+                </article>
+                <div v-if="!recentEvents.length" class="model-file-empty">暂无主动事件</div>
+              </div>
+            </section>
+          </div>
         </article>
 
         <article class="settings-panel" id="botProfiles">
-          <div class="panel-head"><div><p class="eyebrow">Bot Profiles</p><h2>Bot 人格</h2></div></div>
-          <p class="muted-copy">人格配置后续会迁移成独立弹窗组件。</p>
+          <div class="panel-head">
+            <div><p class="eyebrow">Bot Profiles</p><h2>Bot 人格</h2></div>
+            <button class="secondary-action" type="button" @click="profiles.add(String(form.system || ''))"><Plus :size="15" />新增人格</button>
+          </div>
+          <div class="bot-profile-list">
+            <article v-for="profile in profiles.profiles" :key="profile.id" class="bot-profile-card">
+              <div class="tool-provider-head">
+                <strong>{{ profile.name || profile.id }}</strong>
+                <small>{{ profile.id === "default" ? "默认人格" : profile.id }}</small>
+              </div>
+              <div class="form-grid compact">
+                <label><span>名称</span><input v-model="profile.name" /></label>
+                <label><span>回复风格</span><input v-model="profile.reply_style" placeholder="natural / concise / warm" /></label>
+                <label><span>允许工具</span><select v-model="profile.tools_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+                <label class="wide"><span>头像 URL</span><input v-model="profile.avatar_url" /></label>
+                <label class="wide"><span>System Prompt</span><textarea v-model="profile.system" class="bot-system"></textarea></label>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary-action" type="button" :disabled="profile.id === 'default'" @click="profiles.remove(profile.id)"><Trash2 :size="15" />删除</button>
+              </div>
+            </article>
+          </div>
+          <p v-if="profiles.error" class="muted-copy">人格配置读取失败：{{ profiles.error }}</p>
         </article>
 
         <article class="settings-panel settings-panel--prominent" id="prompt">
@@ -324,6 +726,9 @@ async function clearAvatar(target: "user" | "assistant") {
             <label class="wide"><span>TTS URL</span><input v-model="form.tts_url" /></label>
             <label><span>TTS Speed</span><input v-model.number="form.tts_speed" type="number" min="0.7" max="1.5" step="0.01" /></label>
             <label><span>TTS Volume</span><input v-model.number="form.tts_volume" type="number" min="0.05" max="1.5" step="0.01" /></label>
+            <label><span>Sample Rate</span><input v-model.number="form.tts_sample_rate" type="number" min="8000" max="48000" step="1000" /></label>
+            <label><span>Seed</span><input v-model.number="form.tts_seed" type="number" min="-1" max="999999" step="1" /></label>
+            <label><span>Fade ms</span><input v-model.number="form.tts_fade_ms" type="number" min="0" max="2000" step="10" /></label>
           </div>
         </article>
 
@@ -333,13 +738,77 @@ async function clearAvatar(target: "user" | "assistant") {
             <label><span>Threshold</span><input v-model.number="form.vad_threshold" type="number" min="0.1" max="0.9" step="0.01" /></label>
             <label><span>Silence ms</span><input v-model.number="form.vad_min_silence_ms" type="number" min="120" max="1500" step="10" /></label>
             <label><span>Speech Pad ms</span><input v-model.number="form.vad_speech_pad_ms" type="number" min="0" max="500" step="10" /></label>
+            <label><span>Pre Speech ms</span><input v-model.number="form.pre_speech_ms" type="number" min="0" max="2000" step="10" /></label>
+            <label><span>Min Utterance ms</span><input v-model.number="form.min_utterance_ms" type="number" min="80" max="5000" step="10" /></label>
+            <label><span>Max Utterance sec</span><input v-model.number="form.max_utterance_sec" type="number" min="2" max="180" step="1" /></label>
           </div>
         </article>
 
         <article class="settings-panel" id="commands">
-          <div class="panel-head"><div><p class="eyebrow">Service Commands</p><h2>服务命令</h2></div><span class="soft-badge">默认不展开</span></div>
-          <p class="muted-copy">服务命令保持在配置页底部，下一步会迁移为可折叠编辑器。</p>
+          <div class="panel-head">
+            <div><p class="eyebrow">Service Commands</p><h2>服务命令</h2></div>
+            <span class="soft-badge">保存配置时同步写入</span>
+          </div>
+          <div class="profile-list">
+            <section v-for="service in services.services" :key="service.id" class="profile-card">
+              <div class="profile-head">
+                <div>
+                  <strong>{{ service.label || service.id }}</strong>
+                  <span>{{ service.running ? "运行中" : "已停止" }} · {{ service.status || "--" }}</span>
+                </div>
+                <span class="soft-badge">{{ service.id }}</span>
+              </div>
+              <div class="form-grid compact">
+                <label class="wide"><span>工作目录</span><input v-model="service.cwd" /></label>
+                <label class="wide"><span>Health URL</span><input v-model="service.health_url" /></label>
+                <label><span>启动等待秒</span><input v-model.number="service.startup_wait_sec" type="number" min="0" max="180" step="1" /></label>
+                <label class="wide"><span>启动命令</span><textarea v-model="service.command" class="profile-command"></textarea></label>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary-action" type="button" @click="services.updateConfig(service)"><Save :size="15" />保存服务</button>
+                <button class="secondary-action" type="button" @click="services.start(service.id)"><Activity :size="15" />启动</button>
+                <button class="secondary-action" type="button" @click="services.stop(service.id)"><X :size="15" />停止</button>
+              </div>
+            </section>
+          </div>
+          <div v-if="!services.services.length" class="model-file-empty">未读取到本地服务配置</div>
         </article>
+      </section>
+    </div>
+
+    <div v-if="modelFileModalOpen" class="modal-overlay" @click.self="modelFileModalOpen = false">
+      <section class="modal-panel model-file-modal-panel" role="dialog" aria-modal="true" aria-label="选择模型文件">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Model Files</p>
+            <h2>选择 LLM 模型文件</h2>
+          </div>
+          <button class="icon-button modal-close" type="button" title="关闭" @click="modelFileModalOpen = false"><X :size="16" /></button>
+        </div>
+        <div class="modal-body">
+          <div class="model-file-toolbar">
+            <input v-model="modelFileRoot" placeholder="模型目录" @keyup.enter="refreshModelFiles" />
+            <input v-model="modelFileQuery" placeholder="搜索 .gguf / .safetensors" @keyup.enter="refreshModelFiles" />
+            <button class="secondary-action" type="button" @click="refreshModelFiles"><RefreshCw :size="15" />刷新</button>
+          </div>
+          <p v-if="modelFileError" class="muted-copy">{{ modelFileError }}</p>
+          <div class="model-file-list">
+            <button v-if="modelFileResult?.parent" class="model-file-item directory" type="button" @click="goModelParent">
+              <FolderOpen :size="16" />
+              <span><strong>上级目录</strong><span>{{ modelFileResult.parent }}</span></span>
+            </button>
+            <button v-for="directory in modelFileResult?.directories || []" :key="directory.path" class="model-file-item directory" type="button" @click="chooseModelDirectory(directory)">
+              <FolderOpen :size="16" />
+              <span><strong>{{ directory.name }}</strong><span>{{ directory.path }}</span></span>
+            </button>
+            <button v-for="file in modelFileResult?.files || []" :key="file.path" class="model-file-item" type="button" @click="chooseModelFile(file)">
+              <HardDrive :size="16" />
+              <span><strong>{{ file.name }}</strong><span>{{ formatFileSize(file.size) }} · {{ formatTime(file.modified_at) }}</span></span>
+            </button>
+            <div v-if="!modelFileLoading && !(modelFileResult?.directories?.length || modelFileResult?.files?.length)" class="model-file-empty">没有找到可用模型文件</div>
+            <div v-if="modelFileLoading" class="model-file-empty">正在扫描模型目录...</div>
+          </div>
+        </div>
       </section>
     </div>
   </main>
