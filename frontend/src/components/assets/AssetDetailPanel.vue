@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheck, RefreshCw, Save, ScanEye, Trash2 } from "@lucide/vue";
+import { BadgeCheck, RefreshCw, Save, Trash2 } from "@lucide/vue";
 import { reactive, watch } from "vue";
 import type { Sticker } from "@/api/assets";
 import { useAssetsStore } from "@/stores/assets";
@@ -42,7 +42,6 @@ watch(
     form.ocr_text = selected?.ocr_text || "";
     form.error = selected?.error || "";
     assets.detailMessage = "";
-    assets.visionTestResult = null;
   },
   { immediate: true },
 );
@@ -112,7 +111,6 @@ function formatTime(value?: string) {
         <button class="primary-action" type="button" @click="save"><Save :size="15" />保存</button>
         <button class="secondary-action" type="button" @click="assets.approve([selected.id])"><BadgeCheck :size="15" />通过</button>
         <button class="secondary-action" type="button" @click="assets.reanalyzeOne(selected.id)"><RefreshCw :size="15" />重识别</button>
-        <button class="secondary-action" type="button" @click="assets.runVisionTest(selected.id)"><ScanEye :size="15" />自检</button>
         <button class="secondary-action danger" type="button" @click="assets.remove([selected.id])"><Trash2 :size="15" />删除</button>
       </div>
 
@@ -133,8 +131,6 @@ function formatTime(value?: string) {
         <label class="wide"><span>OCR 文本</span><textarea v-model="form.ocr_text"></textarea></label>
         <label class="wide"><span>错误信息</span><textarea v-model="form.error"></textarea></label>
       </div>
-
-      <pre v-if="assets.visionTestResult" class="asset-test-result hit">{{ JSON.stringify(assets.visionTestResult, null, 2) }}</pre>
     </template>
     <template v-else>
       选择一张素材后，可以复核分类、标签、适用场景，并执行保存、审核、重识别和删除。

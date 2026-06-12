@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
-  Check,
-  CircleAlert,
   Copy,
   Download,
   Edit3,
@@ -15,10 +13,8 @@ import {
   RefreshCw,
   RotateCw,
   Save,
-  Send,
   Square,
   Trash2,
-  Volume2,
   X,
 } from "@lucide/vue";
 import type { IntegrationItem } from "@/api/integrations";
@@ -30,7 +26,6 @@ const profiles = useProfilesStore();
 const configOpen = ref(false);
 const actionMessage = ref("");
 
-const tools = computed(() => integrations.environment?.tools || {});
 const selected = computed(() => integrations.selected);
 
 onMounted(async () => {
@@ -128,7 +123,7 @@ function downloadLogs() {
         <div>
           <p class="eyebrow">Channel Bots</p>
           <h1>接入管理</h1>
-          <small>微信桥接、扫码登录、人格绑定、语音与表情自检。当前 {{ integrations.summary }}</small>
+          <small>微信桥接、扫码登录、人格绑定和运行日志。当前 {{ integrations.summary }}</small>
         </div>
         <div class="head-actions">
           <button class="primary-action" type="button" @click="openNew">
@@ -137,31 +132,6 @@ function downloadLogs() {
           <button class="secondary-action" type="button" @click="integrations.reload()">
             <RefreshCw :size="16" /> 刷新
           </button>
-        </div>
-      </section>
-
-      <section class="integration-env">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">OpenClaw Runtime</p>
-            <h2>环境检查</h2>
-          </div>
-          <span class="soft-badge">{{ integrations.environmentReady ? "环境可用" : "需要检查" }}</span>
-        </div>
-        <div class="integration-env-grid">
-          <div
-            v-for="name in ['node', 'npm', 'openclaw', 'ffmpeg', 'silk-wasm']"
-            :key="name"
-            class="integration-env-card"
-            :class="tools[name]?.available ? 'ready' : 'missing'"
-          >
-            <span class="integration-env-icon">
-              <component :is="tools[name]?.available ? Check : CircleAlert" :size="16" />
-            </span>
-            <strong>{{ name }}</strong>
-            <small>{{ tools[name]?.version || "未检测到" }}</small>
-            <span>{{ tools[name]?.path || "PATH 中不可用" }}</span>
-          </div>
         </div>
       </section>
 
@@ -290,43 +260,6 @@ function downloadLogs() {
             <div class="log-viewer integration-log" role="log" aria-live="polite">{{ integrations.logs || "暂无日志。" }}</div>
           </section>
 
-          <section class="integration-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Dialog Probe</p>
-                <h2>链路测试</h2>
-              </div>
-            </div>
-            <div class="integration-test-row">
-              <input v-model="integrations.testText" type="text" placeholder="发送一条测试消息..." autocomplete="off" @keydown.enter="integrations.runDialogTest" />
-              <button class="primary-action" type="button" @click="integrations.runDialogTest"><Send :size="16" /> 测试</button>
-            </div>
-            <div class="integration-test-result">{{ integrations.testResult || "未测试" }}</div>
-            <div class="panel-head compact-head">
-              <div>
-                <p class="eyebrow">Voice Probe</p>
-                <h2>语音自检</h2>
-              </div>
-              <span class="soft-badge">TTS -> 微信</span>
-            </div>
-            <div class="integration-test-row">
-              <input v-model="integrations.voiceText" type="text" placeholder="输入一句话，合成后发送到微信..." autocomplete="off" @keydown.enter="integrations.runVoiceTest" />
-              <button class="secondary-action" type="button" @click="integrations.runVoiceTest"><Volume2 :size="16" /> 发送语音</button>
-            </div>
-            <div class="integration-test-result compact">{{ integrations.voiceResult || "未测试" }}</div>
-            <div class="panel-head compact-head">
-              <div>
-                <p class="eyebrow">Sticker Probe</p>
-                <h2>表情自检</h2>
-              </div>
-              <span class="soft-badge">素材 -> 微信</span>
-            </div>
-            <div class="integration-test-row">
-              <input v-model="integrations.stickerText" type="text" placeholder="输入一句话，按策略发一张表情到微信..." autocomplete="off" @keydown.enter="integrations.runStickerTest" />
-              <button class="secondary-action" type="button" @click="integrations.runStickerTest">发送表情</button>
-            </div>
-            <div class="integration-test-result compact">{{ integrations.stickerResult || "未测试" }}</div>
-          </section>
         </aside>
       </section>
 

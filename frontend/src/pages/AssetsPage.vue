@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ImagePlus, RefreshCw, ScanEye, UploadCloud } from "@lucide/vue";
+import { ImagePlus, RefreshCw, UploadCloud } from "@lucide/vue";
 import { computed, onMounted, ref, watch } from "vue";
 import AssetBulkBar from "@/components/assets/AssetBulkBar.vue";
 import AssetConfigStrip from "@/components/assets/AssetConfigStrip.vue";
@@ -100,12 +100,9 @@ function toggle(id: string, checked: boolean) {
         <div>
           <p class="eyebrow">Asset Library</p>
           <h1>素材库</h1>
-          <small>表情包上传、识别、审核、策略测试和微信发送自检都在这里处理。</small>
+          <small>表情包上传、识别、审核和发送策略配置在这里处理；链路检测已集中到检测中心。</small>
         </div>
         <div class="head-actions">
-          <button class="secondary-action" type="button" :disabled="!selected" @click="assets.runVisionTest(selected?.id)">
-            <ScanEye :size="16" /> 识别自检
-          </button>
           <button class="icon-button" type="button" title="刷新" @click="assets.reload()"><RefreshCw :size="16" /></button>
         </div>
       </section>
@@ -122,7 +119,7 @@ function toggle(id: string, checked: boolean) {
         <div class="asset-upload-copy">
           <span><ImagePlus :size="14" />PNG / JPG / WebP</span>
           <strong>拖放图片到这里，或选择文件批量导入</strong>
-          <small>上传后会进入素材库，可继续批量识别、审核和测试发送策略。</small>
+          <small>上传后会进入素材库，可继续批量识别、审核和配置发送策略。</small>
         </div>
         <div class="asset-upload-actions">
           <button class="primary-action" type="button" @click="openUploadPicker"><ImagePlus :size="16" />选择文件</button>

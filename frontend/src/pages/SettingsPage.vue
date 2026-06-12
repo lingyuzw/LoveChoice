@@ -5,10 +5,10 @@ import {
   Activity,
   AlarmPlus,
   Bot,
+  ClipboardCheck,
   Cloud,
   Copy,
   Cpu,
-  Eraser,
   FileSearch,
   FolderOpen,
   Globe2,
@@ -21,7 +21,6 @@ import {
   Palette,
   Plus,
   RefreshCw,
-  Route,
   Save,
   Sparkles,
   Sun,
@@ -62,6 +61,15 @@ const localDisabled = computed(() => form.dialog_mode === "api");
 const apiDisabled = computed(() => form.dialog_mode === "local");
 const pendingReminders = computed(() => engagement.pendingReminders.slice(0, 8));
 const recentEvents = computed(() => engagement.recentEvents);
+const recommendedBooleanDefaults: Partial<PublicConfig> = {
+  tts_enabled: true,
+  tools_enabled: true,
+  tools_auto_call: true,
+  vision_enabled: true,
+  sticker_vision_enabled: true,
+  stickers_enabled: true,
+  context_compaction_enabled: true,
+};
 type SettingsSectionId =
   | "appearance"
   | "engine"
@@ -168,7 +176,7 @@ watch(
   () => app.config,
   (config) => {
     if (!config) return;
-    Object.assign(form, config);
+    Object.assign(form, { ...recommendedBooleanDefaults, ...config });
   },
   { immediate: true },
 );
@@ -192,8 +200,13 @@ async function saveAll() {
 }
 
 async function openAssets() {
-  await saveAll();
-  await router.push("/assets");
+  closeSettingsSection();
+  await router.push({ name: "assets" });
+}
+
+async function openDiagnostics() {
+  closeSettingsSection();
+  await router.push({ name: "diagnostics" });
 }
 
 function setMode(mode: "local" | "api") {
@@ -286,10 +299,6 @@ function providerInputType(field: string) {
   if (field === "api_key" || field === "webhook_url") return "password";
   if (field === "limit" || field === "max_chars") return "number";
   return "text";
-}
-
-function formatJson(value: unknown) {
-  return value ? JSON.stringify(value, null, 2) : "等待测试。";
 }
 
 function llmService() {
@@ -435,15 +444,100 @@ function formatTime(value?: string) {
           <div>
             <p class="eyebrow">Control Room</p>
             <h2>本地模型与对话能力</h2>
-            <p>把高频配置收束成入口卡片，需要时再打开对应面板，减少页面堆叠和滚动压力。</p>
+            <p>常用开关直接调整，复杂参数进入高级面板，检测和素材管理从这里快速跳转。</p>
           </div>
           <div class="settings-hero-actions">
             <span v-if="settingsMessage" class="soft-badge">{{ settingsMessage }}</span>
+            <button class="secondary-action" type="button" @click="openDiagnostics">
+              <ClipboardCheck :size="16" /> 检测中心
+            </button>
+            <button class="secondary-action" type="button" @click="openAssets">
+              <Library :size="16" /> 素材库
+            </button>
             <button class="primary-action" type="button" @click="saveAll">
               <Save :size="16" /> 保存当前配置
             </button>
           </div>
         </section>
+
+        <section class="settings-quick-console">
+          <article class="quick-panel quick-panel-appearance">
+            <div class="quick-panel-head">
+              <div>
+                <p class="eyebrow">Frequent</p>
+                <h2>常用配置</h2>
+              </div>
+              <span class="soft-badge">{{ theme === "light" ? "浅色主题" : "深色主题" }}</span>
+            </div>
+            <div class="quick-control-grid">
+              <section class="quick-control">
+                <strong>主题</strong>
+                <div class="theme-toggle-group">
+                  <button :class="{ active: theme === 'dark' }" type="button" @click="applyTheme('dark')"><Moon :size="15" />深色</button>
+                  <button :class="{ active: theme === 'light' }" type="button" @click="applyTheme('light')"><Sun :size="15" />浅色</button>
+                </div>
+              </section>
+              <section class="quick-control">
+                <strong>对话模式</strong>
+                <div class="theme-toggle-group">
+                  <button type="button" :class="{ active: form.dialog_mode !== 'api' }" @click="setMode('local')"><HardDrive :size="15" />本地</button>
+                  <button type="button" :class="{ active: form.dialog_mode === 'api' }" @click="setMode('api')"><Cloud :size="15" />API</button>
+                </div>
+              </section>
+              <label class="quick-control"><strong>文字大小</strong><input v-model.number="form.ui_font_scale" type="number" min="0.9" max="1.25" step="0.05" /></label>
+              <label class="quick-check"><input v-model="form.thinking_enabled" type="checkbox" />思考模式</label>
+            </div>
+          </article>
+
+          <article class="quick-panel quick-panel-identity">
+            <div class="quick-person">
+              <div class="identity-preview">
+                <img v-if="form.web_user_avatar_url" :src="form.web_user_avatar_url" alt="我的头像" />
+                <span v-else>我</span>
+              </div>
+              <label><span>我的名称</span><input v-model="form.web_user_name" maxlength="40" /></label>
+              <input ref="userAvatarInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleAvatarSelected($event, 'user')" />
+              <button class="secondary-action" type="button" @click="userAvatarInput?.click()"><ImagePlus :size="15" />头像</button>
+              <button class="small-button" type="button" @click="clearAvatar('user')">清除</button>
+            </div>
+            <div class="quick-person">
+              <div class="identity-preview assistant">
+                <img v-if="form.web_assistant_avatar_url" :src="form.web_assistant_avatar_url" alt="AI 头像" />
+                <span v-else>枝</span>
+              </div>
+              <label><span>AI 名称</span><input v-model="form.web_assistant_name" maxlength="40" /></label>
+              <input ref="assistantAvatarInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="handleAvatarSelected($event, 'assistant')" />
+              <button class="secondary-action" type="button" @click="assistantAvatarInput?.click()"><ImagePlus :size="15" />头像</button>
+              <button class="small-button" type="button" @click="clearAvatar('assistant')">清除</button>
+            </div>
+          </article>
+
+          <article class="quick-panel quick-panel-switches">
+            <div class="quick-panel-head">
+              <div>
+                <p class="eyebrow">Capabilities</p>
+                <h2>能力开关</h2>
+              </div>
+              <button class="secondary-action" type="button" @click="openDiagnostics"><ClipboardCheck :size="15" />检测中心</button>
+            </div>
+            <div class="quick-switch-grid">
+              <label><span>TTS</span><select v-model="form.tts_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+              <label><span>联网工具</span><select v-model="form.tools_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+              <label><span>图片理解</span><select v-model="form.vision_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+              <label><span>上下文压缩</span><select v-model="form.context_compaction_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+              <label><span>主动消息</span><select v-model="engagement.config.enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+              <label><span>表情发送</span><select v-model="form.stickers_enabled"><option :value="true">启用</option><option :value="false">关闭</option></select></label>
+            </div>
+          </article>
+        </section>
+
+        <div class="settings-section-label">
+          <div>
+            <p class="eyebrow">Advanced Panels</p>
+            <h2>高级配置</h2>
+          </div>
+          <small>参数量大的功能仍然收进面板，日常修改不需要反复打开。</small>
+        </div>
 
         <section class="settings-overview-grid">
           <button
@@ -627,19 +721,16 @@ function formatTime(value?: string) {
                   />
                 </label>
               </div>
-              <div class="tool-provider-actions">
-                <button class="secondary-action" type="button" @click="tools.runProviderTest(providerKey)"><Activity :size="15" />测试</button>
-              </div>
-              <pre v-if="tools.testResults[providerKey]" class="tool-resolve-result">{{ tools.testResults[providerKey] }}</pre>
             </section>
           </div>
 
-          <div class="tool-resolve-row">
-            <input v-model="tools.resolveText" placeholder="输入一句话，测试工具路由解析" />
-            <button class="secondary-action" type="button" @click="tools.runResolve"><Route :size="15" />解析</button>
-            <button class="secondary-action" type="button" @click="tools.clearResolve"><Eraser :size="15" />清空</button>
+          <div class="settings-diagnostics-callout">
+            <div>
+              <strong>工具测试已集中到检测中心</strong>
+              <small>Provider 连通性、工具路由解析和失败日志都在检测页统一查看。</small>
+            </div>
+            <button class="secondary-action" type="button" @click="openDiagnostics"><ClipboardCheck :size="15" />去检测中心</button>
           </div>
-          <pre class="tool-resolve-result">{{ formatJson(tools.resolveResult) }}</pre>
           <p v-if="tools.error" class="muted-copy">工具配置读取失败：{{ tools.error }}</p>
         </article>
 
@@ -664,9 +755,12 @@ function formatTime(value?: string) {
               </div>
             </section>
             <section class="dialog-feature-card compact-feature-card asset-jump-card">
-              <div class="appearance-card-head"><strong>素材库</strong><small>表情包识别、审核、策略和微信发送测试已迁移到独立页面</small></div>
+              <div class="appearance-card-head"><strong>素材库</strong><small>表情包识别、审核、策略和微信发送链路已迁移到独立页面</small></div>
               <p class="muted-copy">批量上传、批量识别、一键通过和删除都在素材库统一处理。</p>
-              <button class="primary-action" type="button" @click="openAssets"><Library :size="16" />打开素材库</button>
+              <div class="inline-actions">
+                <button class="primary-action" type="button" @click="openAssets"><Library :size="16" />打开素材库</button>
+                <button class="secondary-action" type="button" @click="openDiagnostics"><ClipboardCheck :size="16" />去检测中心</button>
+              </div>
             </section>
             <section class="dialog-feature-card wide">
               <div class="appearance-card-head"><strong>上下文压缩</strong><small>聊久后保留摘要和最近对话，减少遗忘与延迟</small></div>
@@ -746,7 +840,10 @@ function formatTime(value?: string) {
                 <label><input v-model="engagement.config.triggers.emotion_care" type="checkbox" />情绪关怀</label>
                 <label><input v-model="engagement.config.triggers.long_goal_followup" type="checkbox" />长期目标追踪</label>
               </div>
-              <button class="secondary-action" type="button" @click="engagement.runTest"><Sparkles :size="15" />发送测试主动消息</button>
+              <div class="settings-diagnostics-callout compact">
+                <span>主动消息测试已迁移到检测中心。</span>
+                <button class="secondary-action" type="button" @click="openDiagnostics"><ClipboardCheck :size="15" />去检测中心</button>
+              </div>
             </section>
 
             <section class="proactive-card">

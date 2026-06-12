@@ -85,7 +85,6 @@
 .asset-bulk-bar,
 .asset-progress-panel,
 .asset-filter-card,
-.asset-test-card,
 .asset-detail-panel,
 .asset-gallery-panel {
   border: 1px solid var(--border);
@@ -260,49 +259,10 @@
 }
 
 .asset-filter-card,
-.asset-test-card,
 .asset-detail-panel {
   display: grid;
   gap: 12px;
   padding: 14px;
-}
-
-.asset-test-card strong {
-  color: var(--text);
-  font-size: var(--font-md);
-}
-
-.asset-test-card input,
-.asset-test-card select,
-.asset-test-card button {
-  width: 100%;
-}
-
-.asset-test-result {
-  display: grid;
-  gap: 4px;
-  min-height: 68px;
-  padding: 12px;
-  overflow-wrap: anywhere;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-soft);
-  background: var(--surface-muted);
-  font-size: var(--font-sm);
-  line-height: 1.45;
-}
-
-.asset-test-result strong {
-  font-size: var(--font-sm);
-}
-
-.asset-test-result.hit {
-  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
-  color: var(--text);
-}
-
-.asset-test-result.miss {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
 }
 
 .asset-gallery-panel {

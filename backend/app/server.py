@@ -20,6 +20,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from api.config import create_config_router
+from api.diagnostics import create_diagnostics_router
 from api.profiles import create_profiles_router
 from api.assets import create_assets_router
 from api.engagement import create_engagement_router
@@ -465,6 +466,7 @@ def create_app(args) -> FastAPI:
     app.mount("/runtime/uploads", StaticFiles(directory=UPLOAD_DIR), name="runtime_uploads")
     app.mount("/runtime/stickers", StaticFiles(directory=STICKER_LIBRARY_DIR), name="runtime_stickers")
     app.include_router(create_config_router())
+    app.include_router(create_diagnostics_router())
     app.include_router(create_profiles_router())
     app.include_router(create_assets_router())
     app.include_router(create_engagement_router(deliver_proactive_text))

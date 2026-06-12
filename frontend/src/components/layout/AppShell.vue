@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, Bot, Brain, Library, MessagesSquare, Settings2 } from "@lucide/vue";
+import { Activity, Bot, Brain, ClipboardCheck, Library, MessagesSquare, Settings2 } from "@lucide/vue";
 import { onMounted, watchEffect } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { useAppStore } from "@/stores/app";
@@ -11,6 +11,7 @@ const navItems = [
   { to: "/", label: "对话", icon: MessagesSquare },
   { to: "/services", label: "服务", icon: Activity },
   { to: "/integrations", label: "接入", icon: Bot },
+  { to: "/diagnostics", label: "检测", icon: ClipboardCheck },
   { to: "/memory", label: "记忆", icon: Brain },
   { to: "/assets", label: "素材库", icon: Library },
   { to: "/settings", label: "配置", icon: Settings2 },

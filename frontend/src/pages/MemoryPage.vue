@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { Brain, ChevronLeft, ChevronRight, RefreshCw, Search, Trash2, WandSparkles } from "@lucide/vue";
+import { Brain, ChevronLeft, ChevronRight, RefreshCw, Search, Trash2 } from "@lucide/vue";
 import { useMemoryStore } from "@/stores/memory";
 import type { MemoryLayer } from "@/api/memory";
 
@@ -145,18 +145,6 @@ function formatTime(value?: string) {
             <RefreshCw :size="16" /> 刷新
           </button>
         </footer>
-      </section>
-
-      <section class="memory-admission-panel">
-        <div>
-          <strong>准入测试</strong>
-          <small>检查一段对话会不会被记住，以及为什么被拒绝。</small>
-        </div>
-        <textarea v-model="memory.admissionText" rows="4" placeholder="输入一段对话内容"></textarea>
-        <button class="secondary-action" type="button" @click="memory.testAdmission">
-          <WandSparkles :size="16" /> 测试准入
-        </button>
-        <pre v-if="memory.admissionResults.length">{{ JSON.stringify(memory.admissionResults, null, 2) }}</pre>
       </section>
       </section>
     </div>

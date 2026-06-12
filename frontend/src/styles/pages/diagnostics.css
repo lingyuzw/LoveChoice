@@ -1,0 +1,373 @@
+/* ============================================================
+   diagnostics.css — Centralized self-check console
+   ============================================================ */
+
+.diagnostics-page {
+  width: min(1420px, calc(100vw - 36px));
+  margin: 0 auto;
+  padding: 18px 0 32px;
+  display: grid;
+  gap: 14px;
+}
+
+.diagnostics-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface) 82%, var(--primary) 10%), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+
+.diagnostics-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 34%, rgba(255,255,255,0.055) 42%, transparent 52%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.028) 0 1px, transparent 1px 84px);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+
+.diagnostics-hero h1 {
+  margin: 2px 0 6px;
+  font-size: calc(30px * var(--ui-font-scale));
+  line-height: 1.12;
+}
+
+.diagnostics-hero p:not(.eyebrow) {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.diagnostics-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diagnostics-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostics-summary article {
+  position: relative;
+  overflow: hidden;
+  min-height: 82px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent 64px),
+    var(--surface-muted);
+}
+
+.diagnostics-summary article::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--border-strong);
+  opacity: 0.65;
+}
+
+.diagnostics-summary small {
+  color: var(--text-muted);
+  font-size: var(--font-label);
+  font-weight: 800;
+}
+
+.diagnostics-summary strong {
+  color: var(--text);
+  font-size: calc(28px * var(--ui-font-scale));
+  line-height: 1;
+}
+
+.diagnostics-summary .passed { border-color: color-mix(in srgb, var(--success) 32%, var(--border)); }
+.diagnostics-summary .warning { border-color: color-mix(in srgb, var(--warning) 36%, var(--border)); }
+.diagnostics-summary .failed { border-color: color-mix(in srgb, var(--danger) 34%, var(--border)); }
+.diagnostics-summary .running { border-color: color-mix(in srgb, var(--info) 34%, var(--border)); }
+.diagnostics-summary .passed::before { background: var(--success); }
+.diagnostics-summary .warning::before { background: var(--warning); }
+.diagnostics-summary .failed::before { background: var(--danger); }
+.diagnostics-summary .running::before { background: var(--info); }
+
+.diagnostics-input-console {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-muted) 88%, var(--info) 8%), transparent 68%),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.diagnostics-input-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diagnostics-input-head small {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.diagnostics-input-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostics-input-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.diagnostics-input-grid textarea {
+  min-height: 74px;
+}
+
+.diagnostics-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnostics-group {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.diagnostics-group::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--info), transparent);
+  opacity: 0.42;
+}
+
+.diagnostics-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--surface-muted) 88%, var(--primary) 8%), transparent 75%),
+    var(--surface-muted);
+}
+
+.diagnostics-group-head div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diagnostics-group-head svg {
+  color: var(--primary);
+}
+
+.diagnostics-group-head strong {
+  color: var(--text);
+  font-size: var(--font-md);
+}
+
+.diagnostics-group-head small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 800;
+}
+
+.diagnostics-list {
+  display: grid;
+}
+
+.diagnostic-row {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) minmax(160px, 0.45fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+.diagnostic-row.running::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0 38%, rgba(117,200,189,0.13) 48%, transparent 58%);
+  animation: diagnosticSweep 1.6s linear infinite;
+}
+
+.diagnostic-row:last-child {
+  border-bottom: 0;
+}
+
+.diagnostic-row.failed {
+  background: linear-gradient(90deg, var(--danger-soft), transparent 42%), var(--surface);
+}
+
+.diagnostic-row.warning {
+  background: linear-gradient(90deg, var(--warning-soft), transparent 42%), var(--surface);
+}
+
+.diagnostic-row.passed {
+  background: linear-gradient(90deg, var(--success-soft), transparent 40%), var(--surface);
+}
+
+.diagnostic-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.diagnostic-main strong {
+  display: block;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+
+.diagnostic-main small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.45;
+}
+
+.diagnostic-result {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.diagnostic-state {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: var(--surface-muted);
+  font-size: var(--font-xs);
+  font-weight: 800;
+}
+
+.diagnostic-result small {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.diagnostic-detail {
+  animation: diagnosticDetailIn 160ms ease-out;
+  grid-column: 1 / -1;
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  background: var(--log-bg);
+  font-size: var(--font-xs);
+  white-space: pre-wrap;
+}
+
+.diagnostic-actions {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diagnostic-actions .secondary-action {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+@keyframes diagnosticSweep {
+  from { transform: translateX(-35%); }
+  to { transform: translateX(35%); }
+}
+
+@keyframes diagnosticDetailIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 860px) {
+  .diagnostics-page {
+    width: min(100%, calc(100vw - 20px));
+    padding-top: 12px;
+  }
+  .diagnostics-hero {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .diagnostics-actions {
+    justify-content: stretch;
+  }
+  .diagnostics-actions .primary-action,
+  .diagnostics-actions .secondary-action {
+    flex: 1 1 150px;
+  }
+  .diagnostics-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .diagnostics-input-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .diagnostics-input-grid {
+    grid-template-columns: 1fr;
+  }
+  .diagnostics-input-grid .wide {
+    grid-column: auto;
+  }
+  .diagnostic-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .diagnostic-actions {
+    justify-content: flex-start;
+  }
+  .diagnostic-actions .secondary-action {
+    justify-self: start;
+  }
+}
